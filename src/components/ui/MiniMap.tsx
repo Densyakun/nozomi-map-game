@@ -77,6 +77,18 @@ export default function MiniMap() {
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 1;
     ctx.strokeRect(w * 0.1, h * 0.1, w * 0.8, h * 0.8);
+
+    // Draw compass directions
+    ctx.fillStyle = '#ef4444';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('N', w / 2, h * 0.05);
+    
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('S', w / 2, h * 0.95);
+    ctx.fillText('E', w * 0.95, h / 2);
+    ctx.fillText('W', w * 0.05, h / 2);
   }, [stations, lines]);
 
   if (isMobile) return null;

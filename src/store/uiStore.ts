@@ -12,6 +12,7 @@ interface UIState {
   selectedStationPosition: { x: number; z: number } | null;
   constructionStartPoint: { x: number; z: number; stationId?: string } | null;
   speedDialOpen: boolean;
+  cameraDirection: number; // in degrees
 }
 
 interface UIActions {
@@ -23,6 +24,7 @@ interface UIActions {
   setHoveredPosition: (pos: { x: number; z: number } | null) => void;
   setSelectedStationPosition: (pos: { x: number; z: number } | null) => void;
   setConstructionStartPoint: (point: UIState['constructionStartPoint']) => void;
+  setCameraDirection: (direction: number) => void;
   setSpeedDialOpen: (open: boolean) => void;
   reset: () => void;
 }
@@ -36,6 +38,7 @@ const defaultUIState: UIState = {
   showMiniMap: true,
   hoveredPosition: null,
   selectedStationPosition: null,
+  cameraDirection: 0,
   constructionStartPoint: null,
   speedDialOpen: false,
 };
@@ -65,7 +68,9 @@ export const useUIStore = create<UIState & UIActions>()((set) => ({
   setSelectedStationPosition: (pos) => set({ selectedStationPosition: pos }),
 
   setConstructionStartPoint: (point) => set({ constructionStartPoint: point }),
+setCameraDirection: (direction) => set({ cameraDirection: direction }),
 
+  
   setSpeedDialOpen: (open) => set({ speedDialOpen: open }),
 
   reset: () => set({ ...defaultUIState }),

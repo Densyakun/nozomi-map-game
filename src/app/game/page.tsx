@@ -15,6 +15,7 @@ import SidePanel from '@/components/ui/SidePanel';
 import BottomSheet from '@/components/ui/BottomSheet';
 import TimeController from '@/components/ui/TimeController';
 import Modal from '@/components/common/Modal';
+import Compass from '@/components/ui/Compass';
 
 const GameCanvas = dynamic(() => import('@/components/game/GameCanvas'), {
   ssr: false,
@@ -30,6 +31,7 @@ export default function GamePage() {
   const [showMenu, setShowMenu] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const initialised = useRef(false);
+  const cameraDirection = useUIStore((s) => s.cameraDirection);
 
   const initNewGame = useGameStore((s) => s.initNewGame);
   const initScenarioGame = useGameStore((s) => s.initScenarioGame);
@@ -110,6 +112,7 @@ export default function GamePage() {
     <div className="flex h-screen bg-slate-900 overflow-hidden">
       <div className={`flex flex-col flex-1 relative ${isMobile ? '' : ''}`}>
         <HUD />
+        {!isMobile && <Compass cameraDirection={cameraDirection} />}
         <GameCanvas mapData={mapData} showGrid={true} />
         <div className={`absolute ${isMobile ? 'bottom-32' : 'bottom-6'} left-1/2 -translate-x-1/2 z-30`}>
           <TimeController />

@@ -155,6 +155,27 @@ function buildRails(lines: RailLine[], stations: Station[]): THREE.Group {
   return group;
 }
 
+function CameraDirectionTracker() {
+  const { camera } = useThree();
+  const setCameraDirection = useUIStore((s) => s.setCameraDirection);
+
+  useEffect(() => {
+    const updateDirection = () => {
+      const direction = new THREE.Vector3(0, 0, -1);
+      direction.applyQuaternion(camera.quaternion);
+      const angle = Math.atan2(direction.x, direction.z);
+      const degrees = (angle * 180) / Math.PI;
+      setCameraDirection(degrees);
+    };
+
+    updateDirection();
+    const interval = setInterval(updateDirection, 100);
+    return () => clearInterval(interval);
+  }, [camera, setCameraDirection]);
+
+  return null;
+}
+
 function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
   const { scene, gl, camera } = useThree();
   const stations = useGameStore((s) => s.railwayNetwork.stations);
@@ -359,6 +380,7 @@ export default function GameCanvas({ mapData, showGrid = true }: GameCanvasProps
         style={{ background: '#87ceeb' }}
       >
         <SceneSetup mapData={mapData} showGrid={showGrid} />
+        <CameraDirectionTracker />
       </Canvas>
     </div>
   );
