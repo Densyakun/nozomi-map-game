@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { MapControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -86,16 +86,53 @@ function buildBuildings(mapData: MapData): THREE.Group {
   return group;
 }
 
-function buildStations(stations: Station[]): THREE.Group {
+function buildStations(stations: Station[], mapData: MapData): THREE.Group {
   const group = new THREE.Group();
   if (!stations.length) return group;
-  const geo = new THREE.CylinderGeometry(3, 4, 3, 8);
+
+  const getTerrainHeight = (x: number, z: number): number => {
+    const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+    const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+    const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+    const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+    if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+      return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+    }
+    return 0;
+  };
+
   for (const st of stations) {
-    const m = new THREE.Mesh(geo.clone(), new THREE.MeshStandardMaterial({ color: st.ownerId === 'player' ? 0x3b82f6 : 0xef4444 }));
-    m.position.set(st.position.x, st.elevation + 1.5, st.position.z);
-    m.userData = { type: 'station', stationId: st.id, name: st.name };
-    m.castShadow = true;
-    group.add(m);
+    const terrainHeight = getTerrainHeight(st.position.x, st.position.z);
+    const stationGroup = new THREE.Group();
+
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(5, 6, 2, 8),
+      new THREE.MeshStandardMaterial({ color: st.ownerId === 'player' ? 0x3b82f6 : 0xef4444 })
+    );
+    base.position.set(0, 1, 0);
+    base.castShadow = true;
+    base.receiveShadow = true;
+    stationGroup.add(base);
+
+    const tower = new THREE.Mesh(
+      new THREE.CylinderGeometry(1, 2, 6, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffffff })
+    );
+    tower.position.set(0, 5, 0);
+    tower.castShadow = true;
+    stationGroup.add(tower);
+
+    const roof = new THREE.Mesh(
+      new THREE.ConeGeometry(3, 3, 8),
+      new THREE.MeshStandardMaterial({ color: st.ownerId === 'player' ? 0x10b981 : 0xf97316 })
+    );
+    roof.position.set(0, 9.5, 0);
+    roof.castShadow = true;
+    stationGroup.add(roof);
+
+    stationGroup.position.set(st.position.x, terrainHeight, st.position.z);
+    stationGroup.userData = { type: 'station', stationId: st.id, name: st.name };
+    group.add(stationGroup);
   }
   return group;
 }
@@ -119,13 +156,15 @@ function buildRails(lines: RailLine[], stations: Station[]): THREE.Group {
 }
 
 function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
-  const { scene, gl } = useThree();
+  const { scene, gl, camera } = useThree();
   const stations = useGameStore((s) => s.railwayNetwork.stations);
   const lines = useGameStore((s) => s.railwayNetwork.lines);
   const activeTool = useUIStore((s) => s.activeTool);
   const hoveredPosition = useUIStore((s) => s.hoveredPosition);
+  const selectedStationPosition = useUIStore((s) => s.selectedStationPosition);
   const conStart = useUIStore((s) => s.constructionStartPoint);
   const setHover = useUIStore((s) => s.setHoveredPosition);
+  const setSelectedStationPosition = useUIStore((s) => s.setSelectedStationPosition);
   const setSel = useUIStore((s) => s.setSelectedElement);
   const setCon = useUIStore((s) => s.setConstructionStartPoint);
 
@@ -165,34 +204,52 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
   }, [mapData, showGrid]);
 
   const dynObjs = useMemo(() => {
-    return { sts: buildStations(stations), rls: buildRails(lines, stations) };
-  }, [stations, lines]);
+    return { sts: buildStations(stations, mapData), rls: buildRails(lines, stations) };
+  }, [stations, lines, mapData]);
 
   const previewObj = useMemo(() => {
     const g = new THREE.Group();
     if (!activeTool || activeTool === 'select' || activeTool === 'demolish') return g;
-    if (activeTool === 'station' && hoveredPosition) {
-      const x = Math.round(hoveredPosition.x / 10) * 10, z = Math.round(hoveredPosition.z / 10) * 10;
-      const p = new THREE.Mesh(new THREE.CylinderGeometry(3, 4, 3, 8), new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.5 }));
-      p.position.set(x, 1.5, z); g.add(p);
-      const r = new THREE.Mesh(new THREE.RingGeometry(3.5, 4.5, 16), new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
-      r.position.set(x, 0.1, z); r.rotation.x = -Math.PI / 2; g.add(r);
+
+    const getTerrainHeight = (x: number, z: number): number => {
+      const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+      const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+      const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+      const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+      if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+        return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+      }
+      return 0;
+    };
+
+    if (activeTool === 'station') {
+      if (selectedStationPosition) {
+        const { x, z } = selectedStationPosition;
+        const terrainHeight = getTerrainHeight(x, z);
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 10, 8), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+        p.position.set(x, terrainHeight + 5, z); g.add(p);
+      } else if (hoveredPosition) {
+        const x = Math.round(hoveredPosition.x / 10) * 10, z = Math.round(hoveredPosition.z / 10) * 10;
+        const terrainHeight = getTerrainHeight(x, z);
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 8, 8), new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.5 }));
+        p.position.set(x, terrainHeight + 4, z); g.add(p);
+      }
     }
     if (activeTool === 'line' && conStart && hoveredPosition) {
       const ss = stations.find((s) => s.id === conStart.stationId);
       if (ss) {
         const sx = ss.position.x, sz = ss.position.z, ex = Math.round(hoveredPosition.x / 10) * 10, ez = Math.round(hoveredPosition.z / 10) * 10;
         const len = Math.sqrt((ex - sx) ** 2 + (ez - sz) ** 2), ang = Math.atan2(ez - sz, ex - sx);
-        const rl = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, len, 4), new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.6 }));
+        const rl = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, len, 4), new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.6, depthWrite: false }));
         rl.rotation.z = Math.PI / 2; rl.position.set((sx + ex) / 2, 0.5, (sz + ez) / 2); rl.rotation.y = -ang; g.add(rl);
-        const sm = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.7 }));
+        const sm = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.7, depthWrite: false }));
         sm.position.set(sx, 0.5, sz); g.add(sm);
-        const em = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.7 }));
+        const em = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.7, depthWrite: false }));
         em.position.set(ex, 0.5, ez); g.add(em);
       }
     }
     return g;
-  }, [activeTool, hoveredPosition, conStart, stations]);
+  }, [activeTool, hoveredPosition, selectedStationPosition, conStart, stations, mapData]);
 
   useEffect(() => {
     const managed: THREE.Object3D[] = [];
@@ -218,26 +275,73 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
   }, [showGrid, sceneObjects.grid]);
 
   useEffect(() => {
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
     const dom = gl.domElement;
-    const onDown = (e: any) => {
-      if (e.delta > 0) return;
-      const obj = e.object;
-      if (obj?.userData?.type === 'station') {
-        const sid = obj.userData.stationId as string;
-        if (activeTool === 'line') {
-          if (conStart?.stationId === sid) setCon(null); else setCon({ x: 0, z: 0, stationId: sid });
-        } else { setSel(sid, 'station'); }
-      } else if (activeTool === 'station') {
-        if (e.point) setHover({ x: e.point.x, z: e.point.z });
-      } else { setSel(null, null); }
+    let downPosition: { x: number; y: number } | null = null;
+
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      downPosition = { x: e.clientX, y: e.clientY };
     };
-    const onMove = (e: any) => {
-      if (e.object?.userData?.type === 'terrain' && e.point) setHover({ x: e.point.x, z: e.point.z });
+
+    const onUp = (e: MouseEvent) => {
+      if (e.button !== 0 || !downPosition) return;
+      const moveDistance = Math.sqrt(
+        Math.pow(e.clientX - downPosition.x, 2) + Math.pow(e.clientY - downPosition.y, 2)
+      );
+      downPosition = null;
+
+      if (moveDistance > 5) return;
+
+      const rect = dom.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(scene.children, true);
+
+      if (intersects.length > 0) {
+        const hit = intersects[0];
+        const obj = hit.object;
+
+        if (obj.userData?.type === 'station') {
+          const sid = obj.userData.stationId as string;
+          if (activeTool === 'line') {
+            if (conStart?.stationId === sid) setCon(null); else setCon({ x: 0, z: 0, stationId: sid });
+          } else { setSel(sid, 'station'); }
+        } else if (activeTool === 'station') {
+          const terrainHit = intersects.find((i) => i.object.userData?.type === 'terrain');
+          if (terrainHit && terrainHit.point) {
+            const x = Math.round(terrainHit.point.x / 10) * 10;
+            const z = Math.round(terrainHit.point.z / 10) * 10;
+            setSelectedStationPosition({ x, z });
+          }
+        } else { setSel(null, null); }
+      }
     };
+
+    const onMove = (e: MouseEvent) => {
+      const rect = dom.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(scene.children, true);
+
+      if (intersects.length > 0) {
+        const hit = intersects[0];
+        if (hit.object?.userData?.type === 'terrain' && hit.point) {
+          setHover({ x: hit.point.x, z: hit.point.z });
+        }
+      }
+    };
+
     dom.addEventListener('pointerdown', onDown);
+    dom.addEventListener('pointerup', onUp);
     dom.addEventListener('pointermove', onMove);
-    return () => { dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointermove', onMove); };
-  }, [gl, activeTool, conStart, setSel, setHover, setCon]);
+    return () => { dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointerup', onUp); dom.removeEventListener('pointermove', onMove); };
+  }, [gl, camera, scene, activeTool, conStart, setSel, setHover, setCon, setSelectedStationPosition]);
 
   return (
     <MapControls makeDefault enableDamping dampingFactor={0.1}

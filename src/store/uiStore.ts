@@ -9,6 +9,7 @@ interface UIState {
   isMobile: boolean;
   showMiniMap: boolean;
   hoveredPosition: { x: number; z: number } | null;
+  selectedStationPosition: { x: number; z: number } | null;
   constructionStartPoint: { x: number; z: number; stationId?: string } | null;
   speedDialOpen: boolean;
 }
@@ -20,6 +21,7 @@ interface UIActions {
   setIsMobile: (isMobile: boolean) => void;
   setShowMiniMap: (show: boolean) => void;
   setHoveredPosition: (pos: { x: number; z: number } | null) => void;
+  setSelectedStationPosition: (pos: { x: number; z: number } | null) => void;
   setConstructionStartPoint: (point: UIState['constructionStartPoint']) => void;
   setSpeedDialOpen: (open: boolean) => void;
   reset: () => void;
@@ -33,6 +35,7 @@ const defaultUIState: UIState = {
   isMobile: false,
   showMiniMap: true,
   hoveredPosition: null,
+  selectedStationPosition: null,
   constructionStartPoint: null,
   speedDialOpen: false,
 };
@@ -45,6 +48,7 @@ export const useUIStore = create<UIState & UIActions>()((set) => ({
       activeTool: tool,
       openPanel: tool ? 'construction' : 'none',
       constructionStartPoint: null,
+      selectedStationPosition: null,
     }),
 
   setSelectedElement: (id, type) =>
@@ -57,6 +61,8 @@ export const useUIStore = create<UIState & UIActions>()((set) => ({
   setShowMiniMap: (show) => set({ showMiniMap: show }),
 
   setHoveredPosition: (pos) => set({ hoveredPosition: pos }),
+
+  setSelectedStationPosition: (pos) => set({ selectedStationPosition: pos }),
 
   setConstructionStartPoint: (point) => set({ constructionStartPoint: point }),
 

@@ -14,6 +14,8 @@ export default function ConstructionTool() {
   const constructionStartPoint = useUIStore((s) => s.constructionStartPoint);
   const setConstructionStartPoint = useUIStore((s) => s.setConstructionStartPoint);
   const hoveredPosition = useUIStore((s) => s.hoveredPosition);
+  const selectedStationPosition = useUIStore((s) => s.selectedStationPosition);
+  const setSelectedStationPosition = useUIStore((s) => s.setSelectedStationPosition);
   const stations = useGameStore((s) => s.railwayNetwork.stations);
   const lines = useGameStore((s) => s.railwayNetwork.lines);
   const addStation = useGameStore((s) => s.addStation);
@@ -26,7 +28,7 @@ export default function ConstructionTool() {
   const [selectedMethod, setSelectedMethod] = useState<'surface' | 'elevated' | 'tunnel' | 'bridge'>('surface');
 
   const handleBuildStation = () => {
-    if (!hoveredPosition || !stationName.trim()) return;
+    if (!selectedStationPosition || !stationName.trim()) return;
     const cost = 500000;
     if (!spendFunds(cost, 'construction', `駅建設: ${stationName}`)) return;
 
@@ -34,7 +36,7 @@ export default function ConstructionTool() {
       id: uuid(),
       ownerId: 'player',
       name: stationName.trim(),
-      position: { x: Math.round(hoveredPosition.x / 10) * 10, z: Math.round(hoveredPosition.z / 10) * 10 },
+      position: { x: selectedStationPosition.x, z: selectedStationPosition.z },
       elevation: 0,
       type: 'normal',
       passengers: 0,
@@ -44,6 +46,7 @@ export default function ConstructionTool() {
 
     addStation(newStation);
     setStationName('');
+    setSelectedStationPosition(null);
     setActiveTool(null);
   };
 
@@ -146,14 +149,18 @@ export default function ConstructionTool() {
             placeholder="駅名を入力"
             className="w-full bg-slate-700 text-white px-3 py-2 rounded-lg text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          {hoveredPosition && (
-            <p className="text-xs font-mono text-slate-400">
-              位置: ({Math.round(hoveredPosition.x)}, {Math.round(hoveredPosition.z)})
+          {selectedStationPosition ? (
+            <p className="text-xs font-mono text-emerald-400">
+              選択位置: ({selectedStationPosition.x}, {selectedStationPosition.z})
+            </p>
+          ) : (
+            <p className="text-xs font-mono text-slate-500">
+              カーソル: {hoveredPosition ? `(${Math.round(hoveredPosition.x)}, ${Math.round(hoveredPosition.z)})` : 'マップ外'}
             </p>
           )}
           <button
             onClick={handleBuildStation}
-            disabled={!stationName.trim() || !hoveredPosition}
+            disabled={!stationName.trim() || !selectedStationPosition}
             className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold rounded-lg text-sm transition-colors"
           >
             建設する (¥500,000)
