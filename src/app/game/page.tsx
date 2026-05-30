@@ -110,7 +110,7 @@ export default function GamePage() {
 
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden">
-      <div className={`flex flex-col flex-1 relative ${isMobile ? '' : ''}`}>
+      <div className={`flex flex-col flex-1 relative min-w-0 ${isMobile ? '' : ''}`}>
         <HUD />
         {!isMobile && <Compass cameraDirection={cameraDirection} />}
         <GameCanvas mapData={mapData} showGrid={true} />
@@ -121,7 +121,7 @@ export default function GamePage() {
         {!isMobile && (
           <button
             onClick={() => setShowMenu(true)}
-            className="absolute top-16 left-3 z-20 w-9 h-9 bg-white/80 hover:bg-white shadow rounded-lg flex items-center justify-center text-sm text-slate-700 transition-colors"
+            className="absolute top-20 left-3 z-40 w-9 h-9 bg-white/80 hover:bg-white shadow rounded-lg flex items-center justify-center text-sm text-slate-700 transition-colors"
             aria-label="メニュー"
           >
             ☰
@@ -131,7 +131,7 @@ export default function GamePage() {
         {isMobile && (
           <button
             onClick={() => setShowMenu(true)}
-            className="absolute top-14 right-3 z-20 w-9 h-9 bg-white/80 hover:bg-white shadow rounded-lg flex items-center justify-center text-sm text-slate-700 transition-colors"
+            className="absolute top-20 right-3 z-40 w-9 h-9 bg-white/80 hover:bg-white shadow rounded-lg flex items-center justify-center text-sm text-slate-700 transition-colors"
             aria-label="メニュー"
           >
             ☰

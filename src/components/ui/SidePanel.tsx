@@ -17,7 +17,7 @@ export default function SidePanel() {
   const scenarioId = useGameStore((s) => s.scenarioId);
 
   return (
-    <div className="w-64 bg-slate-900/95 backdrop-blur-sm border-l border-slate-700 flex flex-col overflow-y-auto">
+    <div className="w-64 lg:w-72 xl:w-80 bg-slate-900/95 backdrop-blur-sm border-l border-slate-700 flex flex-col overflow-y-auto flex-shrink-0">
       <div className="p-3 border-b border-slate-700">
         <MiniMap />
       </div>

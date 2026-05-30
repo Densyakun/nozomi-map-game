@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { MapControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -372,12 +372,29 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
 }
 
 export default function GameCanvas({ mapData, showGrid = true }: GameCanvasProps) {
+  const [cameraConfig, setCameraConfig] = useState({ position: [200, 150, 200] as [number, number, number], fov: 60 });
+
+  useEffect(() => {
+    const updateCamera = () => {
+      const width = window.innerWidth;
+      if (width < 768) {
+        setCameraConfig({ position: [150, 120, 150], fov: 50 });
+      } else {
+        setCameraConfig({ position: [200, 150, 200], fov: 60 });
+      }
+    };
+    updateCamera();
+    window.addEventListener('resize', updateCamera);
+    return () => window.removeEventListener('resize', updateCamera);
+  }, []);
+
   return (
-    <div className="flex-1 relative">
+    <div className="flex-1 relative w-full h-full">
       <Canvas
-        camera={{ position: [200, 150, 200], fov: 60, near: 0.1, far: 2000 }}
+        camera={{ position: cameraConfig.position, fov: cameraConfig.fov, near: 0.1, far: 2000 }}
         gl={{ antialias: true }}
-        style={{ background: '#87ceeb' }}
+        style={{ background: '#87ceeb', width: '100%', height: '100%' }}
+        resize={{ scroll: false, debounce: 0 }}
       >
         <SceneSetup mapData={mapData} showGrid={showGrid} />
         <CameraDirectionTracker />
