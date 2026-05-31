@@ -12,7 +12,9 @@ export default function ConstructionTool() {
   const activeTool = useUIStore((s) => s.activeTool);
   const setActiveTool = useUIStore((s) => s.setActiveTool);
   const constructionStartPoint = useUIStore((s) => s.constructionStartPoint);
+  const constructionEndPoint = useUIStore((s) => s.constructionEndPoint);
   const setConstructionStartPoint = useUIStore((s) => s.setConstructionStartPoint);
+  const setConstructionEndPoint = useUIStore((s) => s.setConstructionEndPoint);
   const hoveredPosition = useUIStore((s) => s.hoveredPosition);
   const selectedStationPosition = useUIStore((s) => s.selectedStationPosition);
   const setSelectedStationPosition = useUIStore((s) => s.setSelectedStationPosition);
@@ -51,17 +53,18 @@ export default function ConstructionTool() {
   };
 
   const handleBuildLine = () => {
-    if (!constructionStartPoint?.stationId || !lineName.trim()) return;
+    if (!constructionStartPoint?.stationId || !constructionEndPoint?.stationId || !lineName.trim()) return;
 
-    const targetStationId = constructionStartPoint.stationId;
-    const startStation = stations.find((s) => s.id === targetStationId);
+    const startStation = stations.find((s) => s.id === constructionStartPoint.stationId);
     if (!startStation) return;
 
-    const stationB = stations.find((s) => s.id !== targetStationId);
-    if (!stationB) return;
+    const endStation = stations.find((s) => s.id === constructionEndPoint.stationId);
+    if (!endStation) return;
 
-    const dx = stationB.position.x - startStation.position.x;
-    const dz = stationB.position.z - startStation.position.z;
+    if (startStation.id === endStation.id) return;
+
+    const dx = endStation.position.x - startStation.position.x;
+    const dz = endStation.position.z - startStation.position.z;
     const length = Math.sqrt(dx * dx + dz * dz);
     const cost = calculateConstructionCost(length, selectedMethod, 1.0);
     const days = estimateConstructionDays(length, selectedMethod);
@@ -70,7 +73,7 @@ export default function ConstructionTool() {
 
     const newSegment: LineSegment = {
       startStationId: startStation.id,
-      endStationId: stationB.id,
+      endStationId: endStation.id,
       length: Math.round(length),
       constructionCost: cost,
       constructionMethod: selectedMethod,
@@ -84,7 +87,7 @@ export default function ConstructionTool() {
       ownerId: 'player',
       name: lineName.trim(),
       color: '#3b82f6',
-      stationIds: [startStation.id, stationB.id],
+      stationIds: [startStation.id, endStation.id],
       segments: [newSegment],
       timetable: [],
       trainIds: [],
@@ -93,7 +96,7 @@ export default function ConstructionTool() {
     addLine(newLine);
 
     const updatedStations = stations.map((s) => {
-      if (s.id === startStation.id || s.id === stationB.id) {
+      if (s.id === startStation.id || s.id === endStation.id) {
         return { ...s, lineIds: [...s.lineIds, newLine.id] };
       }
       return s;
@@ -101,19 +104,11 @@ export default function ConstructionTool() {
 
     setLineName('');
     setConstructionStartPoint(null);
+    setConstructionEndPoint(null);
     setActiveTool(null);
   };
 
-  const handleSelectStation = (stationId: string) => {
-    if (activeTool === 'line') {
-      if (constructionStartPoint?.stationId === stationId) {
-        setConstructionStartPoint(null);
-      } else {
-        setConstructionStartPoint({ x: 0, z: 0, stationId });
-      }
-    }
-  };
-
+  
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
@@ -171,31 +166,32 @@ export default function ConstructionTool() {
       {activeTool === 'line' && (
         <div className="bg-slate-800 rounded-xl p-3 space-y-3">
           <p className="text-xs text-slate-400">
-            {constructionStartPoint
-              ? '接続する駅をクリック'
-              : '始点とする駅をクリック'}
+            {!constructionStartPoint
+              ? '3Dシーン上で始点とする駅をクリック'
+              : !constructionEndPoint
+              ? '3Dシーン上で終点とする駅をクリック'
+              : '路線名を入力して建設'}
           </p>
 
-          <div className="max-h-32 overflow-y-auto space-y-1">
-            {stations.filter((s) => s.ownerId === 'player').map((st) => (
-              <button
-                key={st.id}
-                onClick={() => handleSelectStation(st.id)}
-                className={`w-full text-left py-2 px-3 rounded-lg text-sm transition-colors ${
-                  constructionStartPoint?.stationId === st.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                }`}
-              >
-                {st.name}
-                <span className="text-xs text-slate-500 ml-2">
-                  ({Math.round(st.position.x)}, {Math.round(st.position.z)})
-                </span>
-              </button>
-            ))}
-          </div>
-
           {constructionStartPoint && (
+            <div className="bg-slate-700 rounded-lg p-2">
+              <p className="text-xs text-slate-400 mb-1">始点駅</p>
+              <p className="text-sm text-white font-medium">
+                {stations.find((s) => s.id === constructionStartPoint.stationId)?.name || '不明'}
+              </p>
+            </div>
+          )}
+
+          {constructionEndPoint && (
+            <div className="bg-slate-700 rounded-lg p-2">
+              <p className="text-xs text-slate-400 mb-1">終点駅</p>
+              <p className="text-sm text-white font-medium">
+                {stations.find((s) => s.id === constructionEndPoint.stationId)?.name || '不明'}
+              </p>
+            </div>
+          )}
+
+          {constructionStartPoint && constructionEndPoint && (
             <>
               <input
                 type="text"

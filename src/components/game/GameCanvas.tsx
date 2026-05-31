@@ -137,20 +137,63 @@ function buildStations(stations: Station[], mapData: MapData): THREE.Group {
   return group;
 }
 
-function buildRails(lines: RailLine[], stations: Station[]): THREE.Group {
+function buildRails(lines: RailLine[], stations: Station[], mapData: MapData): THREE.Group {
   const group = new THREE.Group();
   if (!lines.length || !stations.length) return group;
   const sm = new Map(stations.map((s) => [s.id, s]));
+
+  const getTerrainHeight = (x: number, z: number): number => {
+    const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+    const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+    const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+    const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+    if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+      return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+    }
+    return 0;
+  };
+
   for (const ln of lines) {
     const pts: THREE.Vector3[] = [];
-    for (const sid of ln.stationIds) { const st = sm.get(sid); if (st) pts.push(new THREE.Vector3(st.position.x, st.elevation + 1, st.position.z)); }
+    for (const sid of ln.stationIds) {
+      const st = sm.get(sid);
+      if (st) {
+        const terrainHeight = getTerrainHeight(st.position.x, st.position.z);
+        pts.push(new THREE.Vector3(st.position.x, terrainHeight + 1, st.position.z));
+      }
+    }
     if (pts.length < 2) continue;
-    const l = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(new THREE.CatmullRomCurve3(pts).getPoints(50)),
-      new THREE.LineBasicMaterial({ color: new THREE.Color(ln.color) })
-    );
-    l.userData = { type: 'rail', lineId: ln.id };
-    group.add(l);
+
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const tubeGeometry = new THREE.TubeGeometry(curve, 50, 0.8, 8, false);
+    const material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(ln.color),
+      roughness: 0.3,
+      metalness: 0.6,
+      emissive: new THREE.Color(ln.color),
+      emissiveIntensity: 0.2
+    });
+    const tube = new THREE.Mesh(tubeGeometry, material);
+    tube.castShadow = true;
+    tube.receiveShadow = true;
+    tube.userData = { type: 'rail', lineId: ln.id };
+    group.add(tube);
+
+    // Add rail ties (sleepers) for more visual detail
+    const tieGeometry = new THREE.BoxGeometry(4, 0.3, 0.8);
+    const tieMaterial = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 0.9 });
+    const tiePoints = curve.getPoints(20);
+    for (let i = 0; i < tiePoints.length; i++) {
+      const tie = new THREE.Mesh(tieGeometry, tieMaterial);
+      tie.position.copy(tiePoints[i]);
+      const tieTerrainHeight = getTerrainHeight(tie.position.x, tie.position.z);
+      tie.position.y = tieTerrainHeight + 0.5;
+      const tangent = curve.getTangent(i / (tiePoints.length - 1));
+      tie.lookAt(tiePoints[i].clone().add(tangent));
+      tie.castShadow = true;
+      tie.receiveShadow = true;
+      group.add(tie);
+    }
   }
   return group;
 }
@@ -184,10 +227,12 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
   const hoveredPosition = useUIStore((s) => s.hoveredPosition);
   const selectedStationPosition = useUIStore((s) => s.selectedStationPosition);
   const conStart = useUIStore((s) => s.constructionStartPoint);
+  const conEnd = useUIStore((s) => s.constructionEndPoint);
   const setHover = useUIStore((s) => s.setHoveredPosition);
   const setSelectedStationPosition = useUIStore((s) => s.setSelectedStationPosition);
   const setSel = useUIStore((s) => s.setSelectedElement);
   const setCon = useUIStore((s) => s.setConstructionStartPoint);
+  const setConEnd = useUIStore((s) => s.setConstructionEndPoint);
 
   useEffect(() => {
     gl.shadowMap.enabled = true;
@@ -225,7 +270,7 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
   }, [mapData, showGrid]);
 
   const dynObjs = useMemo(() => {
-    return { sts: buildStations(stations, mapData), rls: buildRails(lines, stations) };
+    return { sts: buildStations(stations, mapData), rls: buildRails(lines, stations, mapData) };
   }, [stations, lines, mapData]);
 
   const previewObj = useMemo(() => {
@@ -256,21 +301,32 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
         p.position.set(x, terrainHeight + 4, z); g.add(p);
       }
     }
-    if (activeTool === 'line' && conStart && hoveredPosition) {
+    if (activeTool === 'line' && conStart) {
       const ss = stations.find((s) => s.id === conStart.stationId);
       if (ss) {
-        const sx = ss.position.x, sz = ss.position.z, ex = Math.round(hoveredPosition.x / 10) * 10, ez = Math.round(hoveredPosition.z / 10) * 10;
+        const sx = ss.position.x, sz = ss.position.z;
+        let ex = sx, ez = sz;
+        if (conEnd) {
+          const es = stations.find((s) => s.id === conEnd.stationId);
+          if (es) {
+            ex = es.position.x;
+            ez = es.position.z;
+          }
+        } else if (hoveredPosition) {
+          ex = Math.round(hoveredPosition.x / 10) * 10;
+          ez = Math.round(hoveredPosition.z / 10) * 10;
+        }
         const len = Math.sqrt((ex - sx) ** 2 + (ez - sz) ** 2), ang = Math.atan2(ez - sz, ex - sx);
-        const rl = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, len, 4), new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.6, depthWrite: false }));
-        rl.rotation.z = Math.PI / 2; rl.position.set((sx + ex) / 2, 0.5, (sz + ez) / 2); rl.rotation.y = -ang; g.add(rl);
-        const sm = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.7, depthWrite: false }));
-        sm.position.set(sx, 0.5, sz); g.add(sm);
-        const em = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.7, depthWrite: false }));
-        em.position.set(ex, 0.5, ez); g.add(em);
+        const rl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, len, 8), new THREE.MeshBasicMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.7, depthWrite: false }));
+        rl.rotation.z = Math.PI / 2; rl.position.set((sx + ex) / 2, getTerrainHeight(sx, sz) + 1, (sz + ez) / 2); rl.rotation.y = -ang; g.add(rl);
+        const sm = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 12), new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.8, depthWrite: false }));
+        sm.position.set(sx, getTerrainHeight(sx, sz) + 1, sz); g.add(sm);
+        const em = new THREE.Mesh(new THREE.SphereGeometry(conEnd ? 1 : 0.6, 12, 12), new THREE.MeshBasicMaterial({ color: conEnd ? 0xff0000 : 0xffa500, transparent: true, opacity: conEnd ? 0.8 : 0.6, depthWrite: false }));
+        em.position.set(ex, getTerrainHeight(ex, ez) + 1, ez); g.add(em);
       }
     }
     return g;
-  }, [activeTool, hoveredPosition, selectedStationPosition, conStart, stations, mapData]);
+  }, [activeTool, hoveredPosition, selectedStationPosition, conStart, conEnd, stations, mapData]);
 
   useEffect(() => {
     const managed: THREE.Object3D[] = [];
@@ -324,12 +380,26 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
 
       if (intersects.length > 0) {
         const hit = intersects[0];
-        const obj = hit.object;
+        let obj = hit.object;
 
-        if (obj.userData?.type === 'station') {
+        // Find parent object with station data
+        while (obj && !obj.userData?.type?.includes('station')) {
+          obj = obj.parent;
+        }
+
+        if (obj?.userData?.type === 'station') {
           const sid = obj.userData.stationId as string;
           if (activeTool === 'line') {
-            if (conStart?.stationId === sid) setCon(null); else setCon({ x: 0, z: 0, stationId: sid });
+            if (conStart?.stationId === sid) {
+              setCon(null);
+              setConEnd(null);
+            } else if (!conStart) {
+              setCon({ x: 0, z: 0, stationId: sid });
+            } else if (!conEnd) {
+              setConEnd({ x: 0, z: 0, stationId: sid });
+            } else {
+              setConEnd({ x: 0, z: 0, stationId: sid });
+            }
           } else { setSel(sid, 'station'); }
         } else if (activeTool === 'station') {
           const terrainHit = intersects.find((i) => i.object.userData?.type === 'terrain');
@@ -362,7 +432,7 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
     dom.addEventListener('pointerup', onUp);
     dom.addEventListener('pointermove', onMove);
     return () => { dom.removeEventListener('pointerdown', onDown); dom.removeEventListener('pointerup', onUp); dom.removeEventListener('pointermove', onMove); };
-  }, [gl, camera, scene, activeTool, conStart, setSel, setHover, setCon, setSelectedStationPosition]);
+  }, [gl, camera, scene, activeTool, conStart, conEnd, setSel, setHover, setCon, setConEnd, setSelectedStationPosition]);
 
   return (
     <MapControls makeDefault enableDamping dampingFactor={0.1}

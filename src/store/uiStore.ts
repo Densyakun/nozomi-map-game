@@ -11,6 +11,7 @@ interface UIState {
   hoveredPosition: { x: number; z: number } | null;
   selectedStationPosition: { x: number; z: number } | null;
   constructionStartPoint: { x: number; z: number; stationId?: string } | null;
+  constructionEndPoint: { x: number; z: number; stationId?: string } | null;
   speedDialOpen: boolean;
   cameraDirection: number; // in degrees
 }
@@ -24,6 +25,7 @@ interface UIActions {
   setHoveredPosition: (pos: { x: number; z: number } | null) => void;
   setSelectedStationPosition: (pos: { x: number; z: number } | null) => void;
   setConstructionStartPoint: (point: UIState['constructionStartPoint']) => void;
+  setConstructionEndPoint: (point: UIState['constructionEndPoint']) => void;
   setCameraDirection: (direction: number) => void;
   setSpeedDialOpen: (open: boolean) => void;
   reset: () => void;
@@ -40,6 +42,7 @@ const defaultUIState: UIState = {
   selectedStationPosition: null,
   cameraDirection: 0,
   constructionStartPoint: null,
+  constructionEndPoint: null,
   speedDialOpen: false,
 };
 
@@ -51,6 +54,7 @@ export const useUIStore = create<UIState & UIActions>()((set) => ({
       activeTool: tool,
       openPanel: tool ? 'construction' : 'none',
       constructionStartPoint: null,
+      constructionEndPoint: null,
       selectedStationPosition: null,
     }),
 
@@ -68,6 +72,7 @@ export const useUIStore = create<UIState & UIActions>()((set) => ({
   setSelectedStationPosition: (pos) => set({ selectedStationPosition: pos }),
 
   setConstructionStartPoint: (point) => set({ constructionStartPoint: point }),
+setConstructionEndPoint: (point) => set({ constructionEndPoint: point }),
 setCameraDirection: (direction) => set({ cameraDirection: direction }),
 
   
