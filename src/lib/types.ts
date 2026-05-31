@@ -102,6 +102,25 @@ export interface OSMFeature {
 
 // Map data types -----------------------------------------------------------
 
+export interface Landmark {
+  id: string;
+  name: string;
+  position: { x: number; z: number };
+  type: 'station' | 'building' | 'park' | 'poi' | 'river' | 'mountain' | 'custom';
+  elevation?: number;
+  description?: string;
+}
+
+export interface OSMBuilding {
+  id: string;
+  position: { x: number; z: number };
+  height?: number;
+  levels?: number;
+  buildingType: 'residential' | 'commercial' | 'industrial' | 'public' | 'other';
+  footprint?: number[][]; // Polygon coordinates
+  name?: string;
+}
+
 export interface MapData {
   id: string;
   name: string;
@@ -116,6 +135,8 @@ export interface MapData {
   population: PopulationCell[][];
   geoJSON?: GeoJSONFeatureCollection;
   osmFeatures?: OSMFeature[];
+  landmarks?: Landmark[];
+  osmBuildings?: OSMBuilding[];
 }
 
 // Scenario types -----------------------------------------------------------

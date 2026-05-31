@@ -10,6 +10,7 @@ import type {
   MapData,
   LandUseCell,
   PopulationCell,
+  OSMBuilding,
 } from '@/lib/types';
 
 const OSM_API = 'https://www.openstreetmap.org/api/0.6';
@@ -147,8 +148,50 @@ export function osmFeaturesToMapData(
     }))
   );
 
+  // Extract buildings from OSM features
+  const osmBuildings: OSMBuilding[] = [];
+  
   for (const feat of features) {
     const coords = flattenCoordinates(feat.geometry.coordinates);
+    
+    // Extract building data
+    if (feat.type === 'building') {
+      const c = getCoordCenter(feat.geometry.coordinates);
+      const buildingLevels = feat.tags?.['building:levels'] 
+        ? Number(feat.tags['building:levels']) 
+        : undefined;
+      const buildingHeight = buildingLevels 
+        ? buildingLevels * 3 
+        : feat.tags?.height 
+          ? Number(feat.tags.height) 
+          : 5 + Math.random() * 10;
+      
+      let buildingType: OSMBuilding['buildingType'] = 'other';
+      if (feat.tags?.building === 'residential' || feat.tags?.building === 'house' || feat.tags?.building === 'apartments') {
+        buildingType = 'residential';
+      } else if (feat.tags?.building === 'commercial' || feat.tags?.building === 'office' || feat.tags?.building === 'retail') {
+        buildingType = 'commercial';
+      } else if (feat.tags?.building === 'industrial') {
+        buildingType = 'industrial';
+      } else if (feat.tags?.building === 'public' || feat.tags?.amenity) {
+        buildingType = 'public';
+      }
+      
+      osmBuildings.push({
+        id: `bldg-${feat.id}`,
+        position: {
+          x: lonToX(c[0], centerLon, gridSize),
+          z: latToZ(c[1], centerLat, gridSize),
+        },
+        height: buildingHeight,
+        levels: buildingLevels,
+        buildingType,
+        footprint: coords as number[][],
+        name: feat.tags?.name,
+      });
+    }
+    
+    // Update land use grid
     for (const c of coords) {
       const x = Math.round((c[0] - bounds.west) / (bounds.east - bounds.west) * gridWidth);
       const z = Math.round((c[1] - bounds.south) / (bounds.north - bounds.south) * gridHeight);
@@ -176,6 +219,8 @@ export function osmFeaturesToMapData(
         population[z][x] = { daytime: 150, nighttime: 300, commercial: 50, residential: 250, industrial: 20 };
       } else if (lu === 'industrial') {
         population[z][x] = { daytime: 300, nighttime: 50, commercial: 10, residential: 20, industrial: 200 };
+      } else if (lu === 'agriculture') {
+        population[z][x] = { daytime: 20, nighttime: 10, commercial: 5, residential: 10, industrial: 5 };
       }
     }
   }
@@ -208,6 +253,8 @@ export function osmFeaturesToMapData(
     landUse,
     population,
     osmFeatures: features,
+    osmBuildings,
+    landmarks,
   };
 }
 

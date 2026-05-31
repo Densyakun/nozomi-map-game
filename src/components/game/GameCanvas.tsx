@@ -86,6 +86,475 @@ function buildBuildings(mapData: MapData): THREE.Group {
   return group;
 }
 
+function buildVegetation(mapData: MapData): THREE.Group {
+  const group = new THREE.Group();
+  
+  // Collect all instances first
+  const treeInstances: { pos: THREE.Vector3; scale: THREE.Vector3; height: number }[] = [];
+  const foliageInstances: { pos: THREE.Vector3; scale: THREE.Vector3 }[] = [];
+  const grassInstances: { pos: THREE.Vector3; scale: THREE.Vector3; rotation: number }[] = [];
+  const cropRowInstances: { pos: THREE.Vector3 }[] = [];
+  
+  for (let z = 0; z < mapData.gridHeight; z++) {
+    for (let x = 0; x < mapData.gridWidth; x++) {
+      const lu = mapData.landUse[z]?.[x];
+      if (!lu) continue;
+      
+      const wx = (x - Math.floor(mapData.gridWidth / 2)) * mapData.gridSize;
+      const wz = (z - Math.floor(mapData.gridHeight / 2)) * mapData.gridSize;
+      const el = mapData.heightMap[z]?.[x] ?? 0;
+      
+      if (lu.type === 'forest') {
+        // Collect tree instances
+        const treeCount = Math.floor(Math.random() * 3) + 1;
+        for (let i = 0; i < treeCount; i++) {
+          const offsetX = (Math.random() - 0.5) * mapData.gridSize * 0.8;
+          const offsetZ = (Math.random() - 0.5) * mapData.gridSize * 0.8;
+          const treeHeight = 3 + Math.random() * 4;
+          
+          treeInstances.push({
+            pos: new THREE.Vector3(wx + offsetX, el + treeHeight / 2, wz + offsetZ),
+            scale: new THREE.Vector3(1, treeHeight / 3, 1),
+            height: treeHeight
+          });
+          
+          foliageInstances.push({
+            pos: new THREE.Vector3(wx + offsetX, el + treeHeight + 2.5, wz + offsetZ),
+            scale: new THREE.Vector3(0.8 + Math.random() * 0.4, 0.8 + Math.random() * 0.4, 0.8 + Math.random() * 0.4)
+          });
+        }
+      } else if (lu.type === 'agriculture') {
+        // Collect crop rows
+        const rowCount = 3;
+        const rowSpacing = mapData.gridSize / (rowCount + 1);
+        for (let row = 0; row < rowCount; row++) {
+          const rowOffset = -mapData.gridSize / 2 + rowSpacing * (row + 1);
+          cropRowInstances.push({
+            pos: new THREE.Vector3(wx + rowOffset, el + 0.25, wz)
+          });
+        }
+        
+        // Collect grass between rows
+        const grassCount = Math.floor(Math.random() * 4) + 1;
+        for (let i = 0; i < grassCount; i++) {
+          const offsetX = (Math.random() - 0.5) * mapData.gridSize * 0.9;
+          const offsetZ = (Math.random() - 0.5) * mapData.gridSize * 0.9;
+          
+          grassInstances.push({
+            pos: new THREE.Vector3(wx + offsetX, el + 0.4, wz + offsetZ),
+            scale: new THREE.Vector3(1, 0.5 + Math.random() * 0.5, 1),
+            rotation: Math.random() * Math.PI
+          });
+        }
+      } else if (lu.type === 'rural') {
+        // Collect grass in rural areas
+        const grassCount = Math.floor(Math.random() * 8) + 2;
+        for (let i = 0; i < grassCount; i++) {
+          const offsetX = (Math.random() - 0.5) * mapData.gridSize * 0.9;
+          const offsetZ = (Math.random() - 0.5) * mapData.gridSize * 0.9;
+          
+          grassInstances.push({
+            pos: new THREE.Vector3(wx + offsetX, el + 0.4, wz + offsetZ),
+            scale: new THREE.Vector3(1, 0.5 + Math.random() * 0.5, 1),
+            rotation: Math.random() * Math.PI
+          });
+        }
+      } else if (lu.type === 'park') {
+        // Collect trees in parks
+        if (Math.random() < 0.3) {
+          const treeHeight = 3 + Math.random() * 3;
+          const offsetX = (Math.random() - 0.5) * mapData.gridSize * 0.6;
+          const offsetZ = (Math.random() - 0.5) * mapData.gridSize * 0.6;
+          
+          treeInstances.push({
+            pos: new THREE.Vector3(wx + offsetX, el + treeHeight / 2, wz + offsetZ),
+            scale: new THREE.Vector3(1, treeHeight / 3, 1),
+            height: treeHeight
+          });
+          
+          foliageInstances.push({
+            pos: new THREE.Vector3(wx + offsetX, el + treeHeight + 2.5, wz + offsetZ),
+            scale: new THREE.Vector3(0.8 + Math.random() * 0.4, 0.8 + Math.random() * 0.4, 0.8 + Math.random() * 0.4)
+          });
+        }
+        
+        // Collect grass in parks
+        const grassCount = Math.floor(Math.random() * 5) + 2;
+        for (let i = 0; i < grassCount; i++) {
+          const offsetX = (Math.random() - 0.5) * mapData.gridSize * 0.8;
+          const offsetZ = (Math.random() - 0.5) * mapData.gridSize * 0.8;
+          
+          grassInstances.push({
+            pos: new THREE.Vector3(wx + offsetX, el + 0.4, wz + offsetZ),
+            scale: new THREE.Vector3(1, 0.6 + Math.random() * 0.4, 1),
+            rotation: Math.random() * Math.PI
+          });
+        }
+      }
+    }
+  }
+  
+  // Create instanced meshes for trees
+  if (treeInstances.length > 0) {
+    const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 3, 8);
+    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 0.9 });
+    const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, treeInstances.length);
+    trunkMesh.castShadow = true;
+    trunkMesh.receiveShadow = true;
+    
+    const dummy = new THREE.Object3D();
+    treeInstances.forEach((inst, i) => {
+      dummy.position.copy(inst.pos);
+      dummy.scale.copy(inst.scale);
+      dummy.updateMatrix();
+      trunkMesh.setMatrixAt(i, dummy.matrix);
+    });
+    trunkMesh.instanceMatrix.needsUpdate = true;
+    group.add(trunkMesh);
+  }
+  
+  // Create instanced meshes for foliage
+  if (foliageInstances.length > 0) {
+    const foliageGeo = new THREE.ConeGeometry(2, 5, 8);
+    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x228b22, roughness: 0.8 });
+    const foliageMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, foliageInstances.length);
+    foliageMesh.castShadow = true;
+    foliageMesh.receiveShadow = true;
+    
+    const dummy = new THREE.Object3D();
+    foliageInstances.forEach((inst, i) => {
+      dummy.position.copy(inst.pos);
+      dummy.scale.copy(inst.scale);
+      dummy.updateMatrix();
+      foliageMesh.setMatrixAt(i, dummy.matrix);
+    });
+    foliageMesh.instanceMatrix.needsUpdate = true;
+    group.add(foliageMesh);
+  }
+  
+  // Create instanced meshes for grass
+  if (grassInstances.length > 0) {
+    const grassGeo = new THREE.ConeGeometry(0.2, 0.8, 4);
+    const grassMat = new THREE.MeshStandardMaterial({ color: 0x7cba3d, roughness: 0.9 });
+    const grassMesh = new THREE.InstancedMesh(grassGeo, grassMat, grassInstances.length);
+    grassMesh.castShadow = true;
+    grassMesh.receiveShadow = true;
+    
+    const dummy = new THREE.Object3D();
+    grassInstances.forEach((inst, i) => {
+      dummy.position.copy(inst.pos);
+      dummy.scale.copy(inst.scale);
+      dummy.rotation.y = inst.rotation;
+      dummy.updateMatrix();
+      grassMesh.setMatrixAt(i, dummy.matrix);
+    });
+    grassMesh.instanceMatrix.needsUpdate = true;
+    group.add(grassMesh);
+  }
+  
+  // Create instanced meshes for crop rows
+  if (cropRowInstances.length > 0) {
+    const cropRowGeo = new THREE.BoxGeometry(0.3, 0.5, mapData.gridSize * 0.8);
+    const cropMat = new THREE.MeshStandardMaterial({ color: 0x9acd32, roughness: 0.8 });
+    const cropMesh = new THREE.InstancedMesh(cropRowGeo, cropMat, cropRowInstances.length);
+    cropMesh.castShadow = true;
+    cropMesh.receiveShadow = true;
+    
+    const dummy = new THREE.Object3D();
+    cropRowInstances.forEach((inst, i) => {
+      dummy.position.copy(inst.pos);
+      dummy.updateMatrix();
+      cropMesh.setMatrixAt(i, dummy.matrix);
+    });
+    cropMesh.instanceMatrix.needsUpdate = true;
+    group.add(cropMesh);
+  }
+  
+  return group;
+}
+
+function buildWaterSurface(mapData: MapData): THREE.Mesh | null {
+  // Find river and water cells to create water surface
+  const waterCells: { x: number; z: number; el: number }[] = [];
+  
+  for (let z = 0; z < mapData.gridHeight; z++) {
+    for (let x = 0; x < mapData.gridWidth; x++) {
+      const lu = mapData.landUse[z]?.[x];
+      if (lu?.type === 'river' || lu?.type === 'water') {
+        const wx = (x - Math.floor(mapData.gridWidth / 2)) * mapData.gridSize;
+        const wz = (z - Math.floor(mapData.gridHeight / 2)) * mapData.gridSize;
+        const el = mapData.heightMap[z]?.[x] ?? 0;
+        waterCells.push({ x: wx, z: wz, el });
+      }
+    }
+  }
+  
+  if (waterCells.length === 0) return null;
+  
+  // Create custom shader material for animated water
+  const waterVertexShader = `
+    varying vec2 vUv;
+    varying float vElevation;
+    uniform float uTime;
+    
+    void main() {
+      vUv = uv;
+      vec3 pos = position;
+      // Add gentle wave animation
+      float wave = sin(pos.x * 0.1 + uTime * 0.5) * 0.3 + cos(pos.z * 0.1 + uTime * 0.3) * 0.3;
+      pos.y += wave;
+      vElevation = wave;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }
+  `;
+  
+  const waterFragmentShader = `
+    varying vec2 vUv;
+    varying float vElevation;
+    uniform float uTime;
+    
+    void main() {
+      // Create flowing water effect
+      float flow = sin(vUv.x * 20.0 - uTime * 2.0) * 0.1 + cos(vUv.z * 15.0 + uTime * 1.5) * 0.1;
+      
+      vec3 deepWater = vec3(0.1, 0.3, 0.45);
+      vec3 shallowWater = vec3(0.2, 0.5, 0.6);
+      vec3 foam = vec3(0.8, 0.9, 0.95);
+      
+      float mixFactor = (vElevation + flow) * 0.5 + 0.5;
+      vec3 color = mix(deepWater, shallowWater, mixFactor);
+      
+      // Add foam at wave peaks
+      if (mixFactor > 0.7) {
+        color = mix(color, foam, (mixFactor - 0.7) * 3.0);
+      }
+      
+      // Add subtle sparkles
+      float sparkle = sin(vUv.x * 50.0 + uTime * 3.0) * sin(vUv.z * 50.0 + uTime * 2.0);
+      if (sparkle > 0.9) {
+        color += vec3(0.2, 0.2, 0.2) * (sparkle - 0.9) * 10.0;
+      }
+      
+      gl_FragColor = vec4(color, 0.85);
+    }
+  `;
+  
+  // Create a plane covering all water cells
+  const minX = Math.min(...waterCells.map(c => c.x)) - mapData.gridSize;
+  const maxX = Math.max(...waterCells.map(c => c.x)) + mapData.gridSize;
+  const minZ = Math.min(...waterCells.map(c => c.z)) - mapData.gridSize;
+  const maxZ = Math.max(...waterCells.map(c => c.z)) + mapData.gridSize;
+  
+  const width = maxX - minX;
+  const height = maxZ - minZ;
+  const avgElevation = waterCells.reduce((sum, c) => sum + c.el, 0) / waterCells.length;
+  
+  const geometry = new THREE.PlaneGeometry(width, height, 50, 50);
+  geometry.rotateX(-Math.PI / 2);
+  
+  const material = new THREE.ShaderMaterial({
+    vertexShader: waterVertexShader,
+    fragmentShader: waterFragmentShader,
+    uniforms: {
+      uTime: { value: 0 }
+    },
+    transparent: true,
+    side: THREE.DoubleSide
+  });
+  
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set((minX + maxX) / 2, avgElevation + 0.2, (minZ + maxZ) / 2);
+  mesh.userData = { type: 'water', isWater: true };
+  
+  return mesh;
+}
+
+function buildLandmarks(mapData: MapData): THREE.Group {
+  const group = new THREE.Group();
+  if (!mapData.landmarks || mapData.landmarks.length === 0) return group;
+
+  const getTerrainHeight = (x: number, z: number): number => {
+    const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+    const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+    const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+    const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+    if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+      return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+    }
+    return 0;
+  };
+
+  for (const landmark of mapData.landmarks) {
+    const el = landmark.elevation ?? getTerrainHeight(landmark.position.x, landmark.position.z);
+    const markerGroup = new THREE.Group();
+
+    // Create marker based on type
+    let markerColor = 0xff6600;
+    let markerHeight = 15;
+    let markerRadius = 2;
+
+    switch (landmark.type) {
+      case 'station':
+        markerColor = 0x3b82f6;
+        markerHeight = 20;
+        markerRadius = 3;
+        break;
+      case 'building':
+        markerColor = 0x888888;
+        markerHeight = 12;
+        markerRadius = 2;
+        break;
+      case 'park':
+        markerColor = 0x22c55e;
+        markerHeight = 10;
+        markerRadius = 2.5;
+        break;
+      case 'poi':
+        markerColor = 0xf59e0b;
+        markerHeight = 15;
+        markerRadius = 2;
+        break;
+      case 'river':
+        markerColor = 0x0ea5e9;
+        markerHeight = 8;
+        markerRadius = 1.5;
+        break;
+      case 'mountain':
+        markerColor = 0x8b5cf6;
+        markerHeight = 25;
+        markerRadius = 2;
+        break;
+    }
+
+    // Pin/marker body
+    const pinGeo = new THREE.ConeGeometry(markerRadius, markerHeight, 8);
+    const pinMat = new THREE.MeshStandardMaterial({ 
+      color: markerColor, 
+      roughness: 0.3, 
+      metalness: 0.5,
+      emissive: markerColor,
+      emissiveIntensity: 0.2
+    });
+    const pin = new THREE.Mesh(pinGeo, pinMat);
+    pin.position.set(0, el + markerHeight / 2, 0);
+    pin.castShadow = true;
+    markerGroup.add(pin);
+
+    // Marker base
+    const baseGeo = new THREE.CylinderGeometry(markerRadius * 1.2, markerRadius * 1.5, 2, 8);
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.set(0, el + 1, 0);
+    base.castShadow = true;
+    markerGroup.add(base);
+
+    markerGroup.position.set(landmark.position.x, 0, landmark.position.z);
+    markerGroup.userData = { type: 'landmark', landmarkId: landmark.id, name: landmark.name };
+    group.add(markerGroup);
+  }
+
+  return group;
+}
+
+function buildOSMBuildings(mapData: MapData): THREE.Group {
+  const group = new THREE.Group();
+  if (!mapData.osmBuildings || mapData.osmBuildings.length === 0) return group;
+
+  const getTerrainHeight = (x: number, z: number): number => {
+    const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+    const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+    const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+    const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+    if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+      return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+    }
+    return 0;
+  };
+
+  for (const bldg of mapData.osmBuildings) {
+    const el = getTerrainHeight(bldg.position.x, bldg.position.z);
+    const height = bldg.height || 5;
+    
+    // Determine color based on building type
+    let color = 0x888888;
+    switch (bldg.buildingType) {
+      case 'residential':
+        color = 0x8b9daa;
+        break;
+      case 'commercial':
+        color = 0x6b8fb0;
+        break;
+      case 'industrial':
+        color = 0x7a7a7a;
+        break;
+      case 'public':
+        color = 0xd4a574;
+        break;
+    }
+
+    // Create building mesh
+    const buildingGeo = new THREE.BoxGeometry(8, height, 8);
+    const buildingMat = new THREE.MeshStandardMaterial({ 
+      color, 
+      roughness: 0.7, 
+      metalness: 0.1 
+    });
+    const building = new THREE.Mesh(buildingGeo, buildingMat);
+    building.position.set(bldg.position.x, el + height / 2, bldg.position.z);
+    building.castShadow = true;
+    building.receiveShadow = true;
+    building.userData = { type: 'osm_building', buildingId: bldg.id, name: bldg.name };
+    group.add(building);
+
+    // Add roof detail
+    const roofGeo = new THREE.BoxGeometry(8.5, 0.5, 8.5);
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.set(bldg.position.x, el + height + 0.25, bldg.position.z);
+    roof.castShadow = true;
+    group.add(roof);
+
+    // Add windows for taller buildings
+    if (height > 10) {
+      const windowMat = new THREE.MeshStandardMaterial({ 
+        color: 0xaaddff, 
+        roughness: 0.3, 
+        metalness: 0.5,
+        emissive: 0xaaddff,
+        emissiveIntensity: 0.1
+      });
+      const floors = Math.floor(height / 3);
+      for (let floor = 0; floor < floors; floor++) {
+        for (let side = 0; side < 4; side++) {
+          const windowGeo = new THREE.BoxGeometry(1, 1.5, 0.1);
+          const window = new THREE.Mesh(windowGeo, windowMat);
+          const y = el + 2 + floor * 3;
+          
+          switch (side) {
+            case 0: // front
+              window.position.set(bldg.position.x - 2, y, bldg.position.z + 4);
+              break;
+            case 1: // back
+              window.position.set(bldg.position.x + 2, y, bldg.position.z - 4);
+              break;
+            case 2: // left
+              window.position.set(bldg.position.x - 4, y, bldg.position.z - 2);
+              window.rotation.y = Math.PI / 2;
+              break;
+            case 3: // right
+              window.position.set(bldg.position.x + 4, y, bldg.position.z + 2);
+              window.rotation.y = Math.PI / 2;
+              break;
+          }
+          group.add(window);
+        }
+      }
+    }
+  }
+
+  return group;
+}
+
 function buildStations(stations: Station[], mapData: MapData): THREE.Group {
   const group = new THREE.Group();
   if (!stations.length) return group;
@@ -194,6 +663,52 @@ function buildRails(lines: RailLine[], stations: Station[], mapData: MapData): T
       tie.receiveShadow = true;
       group.add(tie);
     }
+
+    // Add overhead lines (catenary wires)
+    const poleGeometry = new THREE.CylinderGeometry(0.15, 0.2, 8, 6);
+    const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7 });
+    const wireGeometry = new THREE.TubeGeometry(curve, 50, 0.05, 4, false);
+    const wireMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0x222222, 
+      roughness: 0.5, 
+      metalness: 0.8 
+    });
+    
+    // Add poles at intervals
+    const polePoints = curve.getPoints(Math.max(3, Math.floor(curve.getLength() / 30)));
+    for (let i = 0; i < polePoints.length; i++) {
+      const pt = polePoints[i];
+      const terrainHeight = getTerrainHeight(pt.x, pt.z);
+      
+      // Pole
+      const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+      pole.position.set(pt.x, terrainHeight + 4, pt.z);
+      pole.castShadow = true;
+      pole.receiveShadow = true;
+      group.add(pole);
+      
+      // Cross arm
+      const crossArm = new THREE.Mesh(
+        new THREE.BoxGeometry(6, 0.2, 0.2),
+        poleMaterial
+      );
+      crossArm.position.set(pt.x, terrainHeight + 8, pt.z);
+      crossArm.castShadow = true;
+      group.add(crossArm);
+    }
+    
+    // Add catenary wire (slightly above the rails)
+    const wire = new THREE.Mesh(wireGeometry, wireMaterial);
+    const wirePoints = curve.getPoints(50);
+    wirePoints.forEach((pt, i) => {
+      pt.y += 7; // Raise wire above rails
+    });
+    const wireCurve = new THREE.CatmullRomCurve3(wirePoints);
+    const wireTubeGeo = new THREE.TubeGeometry(wireCurve, 50, 0.05, 4, false);
+    const wireMesh = new THREE.Mesh(wireTubeGeo, wireMaterial);
+    wireMesh.castShadow = true;
+    wireMesh.userData = { type: 'catenary', lineId: ln.id };
+    group.add(wireMesh);
   }
   return group;
 }
@@ -233,6 +748,7 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
   const setSel = useUIStore((s) => s.setSelectedElement);
   const setCon = useUIStore((s) => s.setConstructionStartPoint);
   const setConEnd = useUIStore((s) => s.setConstructionEndPoint);
+  const [waterMesh, setWaterMesh] = useState<THREE.Mesh | null>(null);
 
   useEffect(() => {
     gl.shadowMap.enabled = true;
@@ -262,12 +778,18 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
 
     const terrain = buildTerrain(mapData);
     const bldgs = buildBuildings(mapData);
+    const vegetation = buildVegetation(mapData);
+    const water = buildWaterSurface(mapData);
+    const landmarks = buildLandmarks(mapData);
+    const osmBuildings = buildOSMBuildings(mapData);
     const maxDim = Math.max(mapData.gridWidth, mapData.gridHeight) * mapData.gridSize;
     const grid = new THREE.GridHelper(maxDim, 50, 0x4a7a3a, 0x3a6a2a);
     grid.visible = showGrid;
 
-    return { ambient, hemi, dir, terrain, bldgs, grid };
-  }, [mapData, showGrid]);
+    setWaterMesh(water);
+
+    return { ambient, hemi, dir, terrain, bldgs, vegetation, water, landmarks, osmBuildings, grid };
+  }, [mapData, showGrid, setWaterMesh]);
 
   const dynObjs = useMemo(() => {
     return { sts: buildStations(stations, mapData), rls: buildRails(lines, stations, mapData) };
@@ -337,6 +859,10 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
     addManaged(sceneObjects.dir);
     addManaged(sceneObjects.terrain);
     addManaged(sceneObjects.bldgs);
+    addManaged(sceneObjects.vegetation);
+    if (sceneObjects.water) addManaged(sceneObjects.water);
+    addManaged(sceneObjects.landmarks);
+    addManaged(sceneObjects.osmBuildings);
     addManaged(sceneObjects.grid);
     addManaged(dynObjs.sts);
     addManaged(dynObjs.rls);
@@ -346,6 +872,24 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
       managed.forEach((o) => { scene.remove(o); delete o.userData.__m; });
     };
   }, [scene, sceneObjects, dynObjs, previewObj]);
+
+  // Animate water surface
+  useEffect(() => {
+    if (!waterMesh) return;
+    
+    const animateWater = () => {
+      if (waterMesh.material instanceof THREE.ShaderMaterial) {
+        waterMesh.material.uniforms.uTime.value += 0.016;
+      }
+      requestAnimationFrame(animateWater);
+    };
+    
+    animateWater();
+    
+    return () => {
+      // Cleanup is handled by the main effect
+    };
+  }, [waterMesh]);
 
   useEffect(() => {
     sceneObjects.grid.visible = showGrid;
@@ -380,7 +924,7 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
 
       if (intersects.length > 0) {
         const hit = intersects[0];
-        let obj = hit.object;
+        let obj: THREE.Object3D | null = hit.object;
 
         // Find parent object with station data
         while (obj && !obj.userData?.type?.includes('station')) {
