@@ -15,6 +15,7 @@ import type {
 
 const OSM_API = 'https://www.openstreetmap.org/api/0.6';
 const OVERPASS_API = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_API_ALT = 'https://overpass.kumi.systems/api/interpreter';
 
 export async function fetchOSMByBounds(
   bounds: GeoBounds
@@ -26,15 +27,18 @@ export async function fetchOSMByBounds(
   return parseOSMXML(text);
 }
 
-export async function fetchOSMByOverpass(query: string): Promise<GeoJSONGeometry[]> {
-  const res = await fetch(OVERPASS_API, {
+export async function fetchOSMByOverpass(query: string): Promise<any> {
+  const res = await fetch(OVERPASS_API_ALT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(`[out:json];${query};out geom;`)}`,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'Mozilla/5.0',
+    },
+    body: `data=${encodeURIComponent(query)}`,
   });
   if (!res.ok) throw new Error(`Overpass API error: ${res.status}`);
   const data = await res.json();
-  return data.elements || [];
+  return data;
 }
 
 export function parseOSMXML(xml: string): OSMRawData {
@@ -97,7 +101,7 @@ export function classifyOSMFeature(tags: Record<string, string>): OSMFeatureType
   if (tags.building || tags['building:part']) return 'building';
   if (tags.waterway === 'river' || tags.waterway === 'stream' || tags.waterway === 'canal') return 'river';
   if (tags.natural === 'water' || tags.landuse === 'reservoir' || tags.landuse === 'basin') return 'water';
-  if (tags.highway || tags.road) return tags.highway === 'motorway' || tags.highway === 'primary' || tags.highway === 'secondary' ? 'road' : null;
+  if (tags.highway || tags.road) return 'road';
   if (tags.railway && tags.railway !== 'abandoned') return 'railway';
   if (tags.natural === 'wood' || tags.landuse === 'forest') return 'forest';
   if (tags.leisure === 'park' || tags.leisure === 'garden') return 'park';
@@ -140,6 +144,17 @@ export function osmFeaturesToMapData(
   const heightMap: number[][] = Array.from({ length: gridHeight }, () =>
     Array(gridWidth).fill(0)
   );
+
+  // Add some terrain variation using simple noise
+  for (let z = 0; z < gridHeight; z++) {
+    for (let x = 0; x < gridWidth; x++) {
+      const nx = x / gridWidth;
+      const nz = z / gridHeight;
+      heightMap[z][x] = 
+        Math.sin(nx * 6.28) * Math.cos(nz * 6.28) * 5 +
+        Math.sin(nx * 12.56) * Math.sin(nz * 12.56) * 2;
+    }
+  }
   const landUse: LandUseCell[][] = Array.from({ length: gridHeight }, () =>
     Array.from({ length: gridWidth }, () => ({
       type: 'rural' as const,
@@ -259,6 +274,7 @@ export function osmFeaturesToMapData(
 }
 
 function flattenCoordinates(coords: any): number[][] {
+  if (!coords || coords.length === 0) return [];
   if (typeof coords[0] === 'number') return [coords as number[]];
   if (typeof coords[0]?.[0] === 'number') return coords as number[][];
   return coords.flatMap((c: any) => flattenCoordinates(c));

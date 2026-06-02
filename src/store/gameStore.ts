@@ -28,7 +28,7 @@ const initialEvaluation: Evaluation = {
 
 interface GameActions {
   initNewGame: (name: string, mapId: string, scenarioId?: string) => void;
-  initScenarioGame: (name: string, mapId: string, scenarioId: string, funds: number, objectives: ObjectiveProgress[]) => void;
+  initScenarioGame: (name: string, mapId: string, scenarioId: string, funds: number, objectives: ObjectiveProgress[], initialFacilities?: any[], competitors?: any[]) => void;
   setTime: (time: GameTime) => void;
   setSpeed: (speed: 0 | 1 | 2 | 5 | 10) => void;
   setPaused: (paused: boolean) => void;
@@ -62,6 +62,7 @@ const defaultState: GameState = {
   finance: { ...initialFinance },
   objectives: [],
   evaluation: { ...initialEvaluation },
+  competitors: [],
 };
 
 export const useGameStore = create<GameState & GameActions>()(
@@ -88,7 +89,20 @@ export const useGameStore = create<GameState & GameActions>()(
         });
       },
 
-      initScenarioGame: (name, mapId, scenarioId, funds, objectives) => {
+      initScenarioGame: (name, mapId, scenarioId, funds, objectives, initialFacilities = [], competitors = []) => {
+        // Process initial facilities
+        const stations = initialFacilities.filter(f => f.type === 'station').map((f: any) => ({
+          id: uuid(),
+          ownerId: f.ownerId,
+          name: f.stationName,
+          position: f.position,
+          elevation: 0,
+          type: 'normal' as const,
+          passengers: 0,
+          lineIds: [],
+          facilityIds: [],
+        }));
+
         set({
           id: uuid(),
           name,
@@ -100,10 +114,11 @@ export const useGameStore = create<GameState & GameActions>()(
           speed: 1,
           paused: false,
           mapId,
-          railwayNetwork: { ...initialRailwayNetwork },
+          railwayNetwork: { ...initialRailwayNetwork, stations },
           finance: { funds, history: [] },
           objectives,
           evaluation: { ...initialEvaluation },
+          competitors,
         });
       },
 

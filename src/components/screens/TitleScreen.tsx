@@ -29,6 +29,8 @@ export default function TitleScreen() {
     router.push('/game?mode=load');
   };
 
+  const isDisabled = !mounted || !hasSave;
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-blue-950 via-slate-900 to-slate-950 p-4">
       <div className="text-center mb-12">
@@ -50,9 +52,9 @@ export default function TitleScreen() {
 
         <button
           onClick={handleLoadGame}
-          disabled={!mounted || !hasSave}
+          disabled={isDisabled}
           className={`w-full py-4 px-6 font-bold text-lg rounded-xl transition-colors active:scale-95 ${
-            mounted && hasSave
+            !isDisabled
               ? 'bg-slate-700 hover:bg-slate-600 text-white'
               : 'bg-slate-800 text-slate-500 cursor-not-allowed'
           }`}

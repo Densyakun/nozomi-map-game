@@ -121,6 +121,13 @@ export interface OSMBuilding {
   name?: string;
 }
 
+export interface PlaceName {
+  id: string;
+  name: string;
+  position: { lat: number; lon: number };
+  type: string;
+}
+
 export interface MapData {
   id: string;
   name: string;
@@ -137,6 +144,7 @@ export interface MapData {
   osmFeatures?: OSMFeature[];
   landmarks?: Landmark[];
   osmBuildings?: OSMBuilding[];
+  places?: PlaceName[];
 }
 
 // Scenario types -----------------------------------------------------------
@@ -301,6 +309,7 @@ export interface GameState {
   finance: FinanceData;
   objectives: ObjectiveProgress[];
   evaluation: Evaluation;
+  competitors: CompetitorData[];
 }
 
 // Simulation types ---------------------------------------------------------

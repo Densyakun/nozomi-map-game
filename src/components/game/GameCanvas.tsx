@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { MapControls } from '@react-three/drei';
+import { MapControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useGameStore } from '@/store/gameStore';
 import { useUIStore } from '@/store/uiStore';
@@ -315,7 +315,7 @@ function buildWaterSurface(mapData: MapData): THREE.Mesh | null {
     
     void main() {
       // Create flowing water effect
-      float flow = sin(vUv.x * 20.0 - uTime * 2.0) * 0.1 + cos(vUv.z * 15.0 + uTime * 1.5) * 0.1;
+      float flow = sin(vUv.x * 20.0 - uTime * 2.0) * 0.1 + cos(vUv.y * 15.0 + uTime * 1.5) * 0.1;
       
       vec3 deepWater = vec3(0.1, 0.3, 0.45);
       vec3 shallowWater = vec3(0.2, 0.5, 0.6);
@@ -330,7 +330,7 @@ function buildWaterSurface(mapData: MapData): THREE.Mesh | null {
       }
       
       // Add subtle sparkles
-      float sparkle = sin(vUv.x * 50.0 + uTime * 3.0) * sin(vUv.z * 50.0 + uTime * 2.0);
+      float sparkle = sin(vUv.x * 50.0 + uTime * 3.0) * sin(vUv.y * 50.0 + uTime * 2.0);
       if (sparkle > 0.9) {
         color += vec3(0.2, 0.2, 0.2) * (sparkle - 0.9) * 10.0;
       }
@@ -550,6 +550,348 @@ function buildOSMBuildings(mapData: MapData): THREE.Group {
         }
       }
     }
+  }
+
+  return group;
+}
+
+function buildOSMRoads(mapData: MapData): THREE.Group {
+  const group = new THREE.Group();
+  if (!mapData.osmFeatures || mapData.osmFeatures.length === 0) return group;
+
+  const getTerrainHeight = (x: number, z: number): number => {
+    const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+    const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+    const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+    const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+    if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+      return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+    }
+    return 0;
+  };
+
+  const centerLat = mapData.center.lat;
+  const centerLon = mapData.center.lng;
+
+  const lonToX = (lon: number): number => {
+    const mPerDeg = 111320;
+    const metersPerLon = mPerDeg * Math.cos((centerLat * Math.PI) / 180);
+    return (lon - centerLon) * metersPerLon;
+  };
+
+  const latToZ = (lat: number): number => {
+    const mPerDeg = 111320;
+    return (centerLat - lat) * mPerDeg;
+  };
+
+  // Process road features
+  const roadFeatures = mapData.osmFeatures.filter(f => f.type === 'road');
+  
+  for (const feature of roadFeatures) {
+    const coords = feature.geometry.coordinates;
+    if (!coords || coords.length < 2) continue;
+
+    // Convert coordinates to Vector3 points
+    const points: THREE.Vector3[] = [];
+    for (const coord of coords as number[][]) {
+      const lon = coord[0];
+      const lat = coord[1];
+      const x = lonToX(lon);
+      const z = latToZ(lat);
+      const y = getTerrainHeight(x, z) + 0.1;
+      points.push(new THREE.Vector3(x, y, z));
+    }
+
+    if (points.length < 2) continue;
+
+    // Create road line
+    const curve = new THREE.CatmullRomCurve3(points);
+    const roadWidth = feature.tags?.highway === 'motorway' || feature.tags?.highway === 'trunk' ? 12 : 8;
+    const tubeGeometry = new THREE.TubeGeometry(curve, points.length * 2, roadWidth / 2, 8, false);
+    
+    const roadColor = feature.tags?.highway === 'motorway' || feature.tags?.highway === 'trunk' 
+      ? 0x444444 
+      : 0x666666;
+    
+    const roadMaterial = new THREE.MeshStandardMaterial({ 
+      color: roadColor, 
+      roughness: 0.9,
+      metalness: 0.1
+    });
+    
+    const roadMesh = new THREE.Mesh(tubeGeometry, roadMaterial);
+    roadMesh.receiveShadow = true;
+    roadMesh.userData = { type: 'osm_road', featureId: feature.id };
+    group.add(roadMesh);
+  }
+
+  return group;
+}
+
+function buildOSMForests(mapData: MapData): THREE.Group {
+  const group = new THREE.Group();
+  if (!mapData.osmFeatures || mapData.osmFeatures.length === 0) return group;
+
+  const forestFeatures = mapData.osmFeatures.filter(f => f.type === 'forest');
+  if (forestFeatures.length === 0) return group;
+
+  const getTerrainHeight = (x: number, z: number): number => {
+    const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+    const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+    const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+    const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+    if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+      return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+    }
+    return 0;
+  };
+
+  const centerLat = mapData.center.lat;
+  const centerLon = mapData.center.lng;
+
+  const lonToX = (lon: number): number => {
+    const mPerDeg = 111320;
+    const metersPerLon = mPerDeg * Math.cos((centerLat * Math.PI) / 180);
+    return (lon - centerLon) * metersPerLon;
+  };
+
+  const latToZ = (lat: number): number => {
+    const mPerDeg = 111320;
+    return (centerLat - lat) * mPerDeg;
+  };
+
+  // Create forest area polygons
+  for (const feature of forestFeatures) {
+    const coords = feature.geometry.coordinates as number[][];
+    if (!coords || coords.length < 3) continue;
+
+    // Create a shape from the coordinates
+    const shape = new THREE.Shape();
+    const firstCoord = coords[0];
+    shape.moveTo(lonToX(firstCoord[0]), latToZ(firstCoord[1]));
+    
+    for (let i = 1; i < coords.length; i++) {
+      const coord = coords[i];
+      shape.lineTo(lonToX(coord[0]), latToZ(coord[1]));
+    }
+    shape.closePath();
+
+    // Create forest ground mesh
+    const forestGeo = new THREE.ShapeGeometry(shape);
+    const forestMat = new THREE.MeshStandardMaterial({ 
+      color: 0x228b22, 
+      roughness: 0.9,
+      side: THREE.DoubleSide
+    });
+    const forestMesh = new THREE.Mesh(forestGeo, forestMat);
+    forestMesh.rotation.x = -Math.PI / 2;
+    
+    // Calculate average elevation
+    let avgY = 0;
+    for (const coord of coords) {
+      avgY += getTerrainHeight(lonToX(coord[0]), latToZ(coord[1]));
+    }
+    avgY /= coords.length;
+    
+    forestMesh.position.y = avgY + 0.05;
+    forestMesh.receiveShadow = true;
+    forestMesh.userData = { type: 'osm_forest', featureId: feature.id };
+    group.add(forestMesh);
+
+    // Add trees within the forest area (simplified - just add random trees in bounding box)
+    const bbox = {
+      minX: Math.min(...coords.map(c => lonToX(c[0]))),
+      maxX: Math.max(...coords.map(c => lonToX(c[0]))),
+      minZ: Math.min(...coords.map(c => latToZ(c[1]))),
+      maxZ: Math.max(...coords.map(c => latToZ(c[1])))
+    };
+
+    const treeCount = Math.floor(((bbox.maxX - bbox.minX) * (bbox.maxZ - bbox.minZ)) / 100);
+    const treeInstances: { pos: THREE.Vector3; scale: THREE.Vector3 }[] = [];
+    
+    for (let i = 0; i < treeCount; i++) {
+      const x = bbox.minX + Math.random() * (bbox.maxX - bbox.minX);
+      const z = bbox.minZ + Math.random() * (bbox.maxZ - bbox.minZ);
+      const y = getTerrainHeight(x, z);
+      
+      const treeHeight = 3 + Math.random() * 4;
+      treeInstances.push({
+        pos: new THREE.Vector3(x, y + treeHeight / 2, z),
+        scale: new THREE.Vector3(1, treeHeight / 3, 1)
+      });
+    }
+
+    if (treeInstances.length > 0) {
+      const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 3, 8);
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 0.9 });
+      const trunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, treeInstances.length);
+      trunkMesh.castShadow = true;
+      trunkMesh.receiveShadow = true;
+      
+      const dummy = new THREE.Object3D();
+      treeInstances.forEach((inst, i) => {
+        dummy.position.copy(inst.pos);
+        dummy.scale.copy(inst.scale);
+        dummy.updateMatrix();
+        trunkMesh.setMatrixAt(i, dummy.matrix);
+      });
+      trunkMesh.instanceMatrix.needsUpdate = true;
+      group.add(trunkMesh);
+
+      const foliageGeo = new THREE.ConeGeometry(2, 5, 8);
+      const foliageMat = new THREE.MeshStandardMaterial({ color: 0x228b22, roughness: 0.8 });
+      const foliageMesh = new THREE.InstancedMesh(foliageGeo, foliageMat, treeInstances.length);
+      foliageMesh.castShadow = true;
+      foliageMesh.receiveShadow = true;
+      
+      treeInstances.forEach((inst, i) => {
+        dummy.position.set(inst.pos.x, inst.pos.y + inst.scale.y * 1.5 + 2.5, inst.pos.z);
+        dummy.scale.set(0.8 + Math.random() * 0.4, 0.8 + Math.random() * 0.4, 0.8 + Math.random() * 0.4);
+        dummy.updateMatrix();
+        foliageMesh.setMatrixAt(i, dummy.matrix);
+      });
+      foliageMesh.instanceMatrix.needsUpdate = true;
+      group.add(foliageMesh);
+    }
+  }
+
+  return group;
+}
+
+function PlaceLabels({ mapData }: { mapData: MapData }) {
+  const centerLat = mapData.center.lat;
+  const centerLon = mapData.center.lng;
+
+  const lonToX = (lon: number): number => {
+    const mPerDeg = 111320;
+    const metersPerLon = mPerDeg * Math.cos((centerLat * Math.PI) / 180);
+    return (lon - centerLon) * metersPerLon;
+  };
+
+  const latToZ = (lat: number): number => {
+    const mPerDeg = 111320;
+    return (centerLat - lat) * mPerDeg;
+  };
+
+  const getTerrainHeight = (x: number, z: number): number => {
+    const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+    const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+    const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+    const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+    if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+      return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+    }
+    return 0;
+  };
+
+  if (!mapData.places || mapData.places.length === 0) return null;
+
+  return (
+    <>
+      {mapData.places.map((place) => {
+        const x = lonToX(place.position.lon);
+        const z = latToZ(place.position.lat);
+        const y = getTerrainHeight(x, z) + 5;
+
+        return (
+          <Html key={place.id} position={[x, y, z]} center>
+            <div
+              style={{
+                backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                color: place.type === 'station' ? '#ffffff' : '#ffdd00',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                whiteSpace: 'nowrap',
+                userSelect: 'none',
+                pointerEvents: 'none',
+              }}
+            >
+              {place.name}
+            </div>
+          </Html>
+        );
+      })}
+    </>
+  );
+}
+
+function buildPlaceLabels(mapData: MapData): THREE.Group {
+  const group = new THREE.Group();
+  // ScreenSpace is now handled by React component
+  return group;
+}
+
+function buildOSMAgriculture(mapData: MapData): THREE.Group {
+  const group = new THREE.Group();
+  if (!mapData.osmFeatures || mapData.osmFeatures.length === 0) return group;
+
+  const agriFeatures = mapData.osmFeatures.filter(f => f.type === 'agriculture');
+  if (agriFeatures.length === 0) return group;
+
+  const getTerrainHeight = (x: number, z: number): number => {
+    const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+    const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+    const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+    const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+    if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+      return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+    }
+    return 0;
+  };
+
+  const centerLat = mapData.center.lat;
+  const centerLon = mapData.center.lng;
+
+  const lonToX = (lon: number): number => {
+    const mPerDeg = 111320;
+    const metersPerLon = mPerDeg * Math.cos((centerLat * Math.PI) / 180);
+    return (lon - centerLon) * metersPerLon;
+  };
+
+  const latToZ = (lat: number): number => {
+    const mPerDeg = 111320;
+    return (centerLat - lat) * mPerDeg;
+  };
+
+  // Create agriculture area polygons
+  for (const feature of agriFeatures) {
+    const coords = feature.geometry.coordinates as number[][];
+    if (!coords || coords.length < 3) continue;
+
+    // Create a shape from the coordinates
+    const shape = new THREE.Shape();
+    const firstCoord = coords[0];
+    shape.moveTo(lonToX(firstCoord[0]), latToZ(firstCoord[1]));
+    
+    for (let i = 1; i < coords.length; i++) {
+      const coord = coords[i];
+      shape.lineTo(lonToX(coord[0]), latToZ(coord[1]));
+    }
+    shape.closePath();
+
+    // Create agriculture ground mesh
+    const agriGeo = new THREE.ShapeGeometry(shape);
+    const agriMat = new THREE.MeshStandardMaterial({ 
+      color: 0x9acd32, 
+      roughness: 0.8,
+      side: THREE.DoubleSide
+    });
+    const agriMesh = new THREE.Mesh(agriGeo, agriMat);
+    agriMesh.rotation.x = -Math.PI / 2;
+    
+    // Calculate average elevation
+    let avgY = 0;
+    for (const coord of coords) {
+      avgY += getTerrainHeight(lonToX(coord[0]), latToZ(coord[1]));
+    }
+    avgY /= coords.length;
+    
+    agriMesh.position.y = avgY + 0.05;
+    agriMesh.receiveShadow = true;
+    agriMesh.userData = { type: 'osm_agriculture', featureId: feature.id };
+    group.add(agriMesh);
   }
 
   return group;
@@ -782,13 +1124,17 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
     const water = buildWaterSurface(mapData);
     const landmarks = buildLandmarks(mapData);
     const osmBuildings = buildOSMBuildings(mapData);
+    const osmRoads = buildOSMRoads(mapData);
+    const osmForests = buildOSMForests(mapData);
+    const osmAgriculture = buildOSMAgriculture(mapData);
+    const placeLabels = buildPlaceLabels(mapData);
     const maxDim = Math.max(mapData.gridWidth, mapData.gridHeight) * mapData.gridSize;
     const grid = new THREE.GridHelper(maxDim, 50, 0x4a7a3a, 0x3a6a2a);
     grid.visible = showGrid;
 
     setWaterMesh(water);
 
-    return { ambient, hemi, dir, terrain, bldgs, vegetation, water, landmarks, osmBuildings, grid };
+    return { ambient, hemi, dir, terrain, bldgs, vegetation, water, landmarks, osmBuildings, osmRoads, osmForests, osmAgriculture, placeLabels, grid };
   }, [mapData, showGrid, setWaterMesh]);
 
   const dynObjs = useMemo(() => {
@@ -863,6 +1209,10 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
     if (sceneObjects.water) addManaged(sceneObjects.water);
     addManaged(sceneObjects.landmarks);
     addManaged(sceneObjects.osmBuildings);
+    addManaged(sceneObjects.osmRoads);
+    addManaged(sceneObjects.osmForests);
+    addManaged(sceneObjects.osmAgriculture);
+    addManaged(sceneObjects.placeLabels);
     addManaged(sceneObjects.grid);
     addManaged(dynObjs.sts);
     addManaged(dynObjs.rls);
@@ -980,7 +1330,7 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
 
   return (
     <MapControls makeDefault enableDamping dampingFactor={0.1}
-      maxPolarAngle={Math.PI / 2.1} minDistance={5} maxDistance={800}
+      maxPolarAngle={Math.PI / 2.1} minDistance={5} maxDistance={2000}
     />
   );
 }
@@ -1011,6 +1361,7 @@ export default function GameCanvas({ mapData, showGrid = true }: GameCanvasProps
         resize={{ scroll: false, debounce: 0 }}
       >
         <SceneSetup mapData={mapData} showGrid={showGrid} />
+        <PlaceLabels mapData={mapData} />
         <CameraDirectionTracker />
       </Canvas>
     </div>

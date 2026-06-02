@@ -8,6 +8,7 @@ import { useTimeStore } from '@/store/timeStore';
 import { useGameLoop } from '@/hooks/useGameLoop';
 import { generateDemoMapData } from '@/lib/demoMapData';
 import { getScenarioById } from '@/data/scenarios';
+import { getMapByIdAsync } from '@/data/maps';
 import { autoSave } from '@/lib/storage';
 import type { ObjectiveProgress, MapData } from '@/lib/types';
 import HUD from '@/components/ui/HUD';
@@ -27,11 +28,12 @@ const GameCanvas = dynamic(() => import('@/components/game/GameCanvas'), {
 });
 
 export default function GamePage() {
-  const [mapData] = useState<MapData>(() => generateDemoMapData());
+  const [mapData, setMapData] = useState<MapData>(() => generateDemoMapData());
   const [showMenu, setShowMenu] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const initialised = useRef(false);
   const cameraDirection = useUIStore((s) => s.cameraDirection);
+  const mapId = useGameStore((s) => s.mapId);
 
   const initNewGame = useGameStore((s) => s.initNewGame);
   const initScenarioGame = useGameStore((s) => s.initScenarioGame);
@@ -50,6 +52,18 @@ export default function GamePage() {
   }, []);
 
   useEffect(() => {
+    const loadMap = async () => {
+      if (mapId) {
+        const map = await getMapByIdAsync(mapId);
+        if (map) {
+          setMapData(map);
+        }
+      }
+    };
+    loadMap();
+  }, [mapId]);
+
+  useEffect(() => {
     if (initialised.current) return;
     initialised.current = true;
 
@@ -66,7 +80,7 @@ export default function GamePage() {
           current: 0,
           target: o.target,
         }));
-        initScenarioGame(scenario.name, scenario.mapId, scenario.id, scenario.startFunds, objProgress);
+        initScenarioGame(scenario.name, scenario.mapId, scenario.id, scenario.startFunds, objProgress, scenario.initialFacilities, scenario.competitors);
         setOpenPanel('none');
       } else {
         initNewGame('My Railway', 'demo-map-001');
