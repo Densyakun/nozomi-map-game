@@ -15,9 +15,9 @@ export default function Compass({ cameraDirection }: CompassProps) {
     if (!compass || cameraDirection === undefined) return;
 
     // Calculate the shortest rotation path
-    let targetRotation = cameraDirection;
+    let targetRotation = cameraDirection + 180; // Add 180 degree offset
     const currentRotation = currentRotationRef.current;
-    
+
     // Normalize to -180 to 180 range
     const normalizeAngle = (angle: number) => {
       while (angle > 180) angle -= 360;
@@ -27,17 +27,17 @@ export default function Compass({ cameraDirection }: CompassProps) {
 
     const normalizedTarget = normalizeAngle(targetRotation);
     const normalizedCurrent = normalizeAngle(currentRotation);
-    
+
     // Calculate the difference
     let diff = normalizedTarget - normalizedCurrent;
-    
+
     // Adjust to take the shortest path
     if (diff > 180) diff -= 360;
     if (diff < -180) diff += 360;
-    
+
     const newRotation = currentRotation + diff;
     currentRotationRef.current = newRotation;
-    
+
     compass.style.transform = `rotate(${newRotation}deg)`;
   }, [cameraDirection]);
 
