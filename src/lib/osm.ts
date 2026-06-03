@@ -16,6 +16,7 @@ import type {
 const OSM_API = 'https://www.openstreetmap.org/api/0.6';
 const OVERPASS_API = 'https://overpass-api.de/api/interpreter';
 const OVERPASS_API_ALT = 'https://overpass.kumi.systems/api/interpreter';
+const OVERPASS_API_Z = 'https://z.overpass-api.de/api/interpreter';
 
 export async function fetchOSMByBounds(
   bounds: GeoBounds
@@ -27,18 +28,40 @@ export async function fetchOSMByBounds(
   return parseOSMXML(text);
 }
 
-export async function fetchOSMByOverpass(query: string): Promise<any> {
-  const res = await fetch(OVERPASS_API_ALT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'Mozilla/5.0',
-    },
-    body: `data=${encodeURIComponent(query)}`,
-  });
-  if (!res.ok) throw new Error(`Overpass API error: ${res.status}`);
-  const data = await res.json();
-  return data;
+export async function fetchOSMByOverpass(query: string, maxRetries = 3): Promise<any> {
+  const axios = (await import('axios')).default;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Attempt ${attempt}/${maxRetries} using overpass.kumi.systems with axios...`);
+      const response = await axios.post(OVERPASS_API_ALT, `data=${encodeURIComponent(query)}`, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        },
+        timeout: 90000,
+      });
+      
+      console.log(`Success on attempt ${attempt}`);
+      return response.data;
+    } catch (error: any) {
+      if (error.response) {
+        console.log(`Attempt ${attempt} failed: ${error.response.status} ${error.response.statusText}`);
+      } else if (error.code === 'ECONNABORTED') {
+        console.log(`Attempt ${attempt} timed out after 90 seconds`);
+      } else {
+        console.log(`Attempt ${attempt} failed: ${error.message}`);
+      }
+      
+      if (attempt === maxRetries) {
+        throw new Error(`Failed after ${maxRetries} attempts. Last error: ${error.message}`);
+      }
+      
+      console.log(`Retrying in 3 seconds...`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+  }
+  throw new Error('Max retries exceeded');
 }
 
 export function parseOSMXML(xml: string): OSMRawData {

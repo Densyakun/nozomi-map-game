@@ -8,7 +8,7 @@ import { fetchOSMByOverpass, classifyOSMFeature, osmFeaturesToMapData } from '..
 import type { MapData, GeoBounds } from '../src/lib/types';
 
 async function generateOSMMap() {
-  const bounds = { lat: 35.65, lon: 139.7, radius: 0.5 }; // エリアを拡大
+  const bounds = { lat: 35.7, lon: 139.7, radius: 0.1 }; // 小さなエリア
   const geoBounds: GeoBounds = {
     north: bounds.lat + bounds.radius / 111,
     south: bounds.lat - bounds.radius / 111,
@@ -17,11 +17,40 @@ async function generateOSMMap() {
   };
 
   console.log('Fetching OSM data from Overpass API...');
-  const query = `[out:json][timeout:60];way["highway"](${geoBounds.south.toFixed(6)},${geoBounds.west.toFixed(6)},${geoBounds.north.toFixed(6)},${geoBounds.east.toFixed(6)});node["name"](${geoBounds.south.toFixed(6)},${geoBounds.west.toFixed(6)},${geoBounds.north.toFixed(6)},${geoBounds.east.toFixed(6)});out body;>;out skel qt;`;
   
-  const data = await fetchOSMByOverpass(query);
-  const geometries = data.elements || [];
-  console.log(`Loaded ${geometries.length} elements`);
+  // Fetch highways first with working format (simplified output)
+  const highwayQuery = `[out:json][timeout:30];way["highway"](${geoBounds.south.toFixed(6)},${geoBounds.west.toFixed(6)},${geoBounds.north.toFixed(6)},${geoBounds.east.toFixed(6)});(._;>;);out;`;
+  console.log('Fetching highways...');
+  const highwayData = await fetchOSMByOverpass(highwayQuery);
+  const highwayElements = highwayData.elements || [];
+  console.log(`Loaded ${highwayElements.length} highway elements`);
+  
+  // Fetch railways separately with same format
+  const railwayQuery = `[out:json][timeout:30];way["railway"](${geoBounds.south.toFixed(6)},${geoBounds.west.toFixed(6)},${geoBounds.north.toFixed(6)},${geoBounds.east.toFixed(6)});(._;>;);out;`;
+  console.log('Fetching railways...');
+  let railwayElements: any[] = [];
+  try {
+    const railwayData = await fetchOSMByOverpass(railwayQuery);
+    railwayElements = railwayData.elements || [];
+    console.log(`Loaded ${railwayElements.length} railway elements`);
+  } catch (error) {
+    console.log(`Railway fetch failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  
+  const geometries = [...highwayElements, ...railwayElements];
+  console.log(`Total loaded ${geometries.length} elements`);
+  
+  if (geometries.length === 0) {
+    console.log('Warning: No elements loaded. Map will be empty.');
+  }
+
+  // Build node map for coordinate lookup
+  const nodeMap = new Map<number, { lat: number; lon: number }>();
+  geometries
+    .filter((el: any) => el.type === 'node')
+    .forEach((el: any) => {
+      nodeMap.set(el.id, { lat: el.lat, lon: el.lon });
+    });
 
   // Extract place names from nodes
   const places = geometries
@@ -38,15 +67,39 @@ async function generateOSMMap() {
   // Convert geometries to OSM features (only ways)
   const osmFeatures = geometries
     .filter((geom: any) => geom.type === 'way')
-    .map((geom: any) => ({
-      id: `osm-${geom.id}`,
-      type: classifyOSMFeature(geom.tags || {}) || 'road',
-      geometry: geom,
-      properties: geom.tags || {},
-      tags: geom.tags || {},
-    }));
+    .map((geom: any) => {
+      // Convert node references to coordinates
+      const coordinates: number[][] = [];
+      if (geom.nodes && Array.isArray(geom.nodes)) {
+        for (const nodeId of geom.nodes) {
+          const node = nodeMap.get(nodeId);
+          if (node) {
+            coordinates.push([node.lon, node.lat]);
+          }
+        }
+      }
 
-  console.log(`Converted ${osmFeatures.length} features`);
+      const featureType = classifyOSMFeature(geom.tags || {}) || 'road';
+      if (geom.tags?.railway) {
+        console.log(`Found railway way: ${geom.id}, type: ${geom.tags.railway}`);
+      }
+
+      return {
+        id: `osm-${geom.id}`,
+        type: featureType,
+        geometry: {
+          type: 'LineString',
+          coordinates,
+        },
+        properties: geom.tags || {},
+        tags: geom.tags || {},
+      };
+    })
+    .filter((feature: any) => feature.geometry.coordinates.length >= 2);
+
+  const railwayCount = osmFeatures.filter((f: any) => f.type === 'railway').length;
+  const roadCount = osmFeatures.filter((f: any) => f.type === 'road').length;
+  console.log(`Converted ${osmFeatures.length} features (${roadCount} roads, ${railwayCount} railways)`);
 
   // Generate map data from OSM features
   console.log('Generating map data...');

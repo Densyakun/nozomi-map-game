@@ -628,6 +628,128 @@ function buildOSMRoads(mapData: MapData): THREE.Group {
   return group;
 }
 
+function buildOSMRailways(mapData: MapData): THREE.Group {
+  const group = new THREE.Group();
+  if (!mapData.osmFeatures || mapData.osmFeatures.length === 0) return group;
+
+  const getTerrainHeight = (x: number, z: number): number => {
+    const halfWidth = (mapData.gridWidth * mapData.gridSize) / 2;
+    const halfHeight = (mapData.gridHeight * mapData.gridSize) / 2;
+    const gridX = Math.floor((x + halfWidth) / mapData.gridSize);
+    const gridZ = Math.floor((z + halfHeight) / mapData.gridSize);
+    if (gridX >= 0 && gridX < mapData.gridWidth && gridZ >= 0 && gridZ < mapData.gridHeight) {
+      return mapData.heightMap?.[gridZ]?.[gridX] ?? 0;
+    }
+    return 0;
+  };
+
+  const centerLat = mapData.center.lat;
+  const centerLon = mapData.center.lng;
+
+  const lonToX = (lon: number): number => {
+    const mPerDeg = 111320;
+    const metersPerLon = mPerDeg * Math.cos((centerLat * Math.PI) / 180);
+    return (lon - centerLon) * metersPerLon;
+  };
+
+  const latToZ = (lat: number): number => {
+    const mPerDeg = 111320;
+    return (centerLat - lat) * mPerDeg;
+  };
+
+  // Process railway features
+  const railwayFeatures = mapData.osmFeatures.filter(f => f.type === 'railway');
+  
+  for (const feature of railwayFeatures) {
+    const coords = feature.geometry.coordinates;
+    if (!coords || coords.length < 2) continue;
+
+    // Convert coordinates to Vector3 points
+    const points: THREE.Vector3[] = [];
+    for (const coord of coords as number[][]) {
+      const lon = coord[0];
+      const lat = coord[1];
+      const x = lonToX(lon);
+      const z = latToZ(lat);
+      const y = getTerrainHeight(x, z) + 0.15;
+      points.push(new THREE.Vector3(x, y, z));
+    }
+
+    if (points.length < 2) continue;
+
+    // Create railway line with dual rails
+    const curve = new THREE.CatmullRomCurve3(points);
+    const railWidth = 1.5;
+    const tubeGeometry = new THREE.TubeGeometry(curve, points.length * 2, railWidth / 2, 8, false);
+    
+    const railColor = 0x888888;
+    
+    const railMaterial = new THREE.MeshStandardMaterial({ 
+      color: railColor, 
+      roughness: 0.6,
+      metalness: 0.4
+    });
+    
+    const railMesh = new THREE.Mesh(tubeGeometry, railMaterial);
+    railMesh.receiveShadow = true;
+    railMesh.userData = { type: 'osm_railway', featureId: feature.id };
+    group.add(railMesh);
+
+    // Add rail ties (sleepers) for visual detail
+    const tieGeometry = new THREE.BoxGeometry(3, 0.2, 0.6);
+    const tieMaterial = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 0.9 });
+    const tiePoints = curve.getPoints(Math.max(5, Math.floor(points.length * 1.5)));
+    
+    for (let i = 0; i < tiePoints.length; i++) {
+      const tie = new THREE.Mesh(tieGeometry, tieMaterial);
+      const pt = tiePoints[i];
+      tie.position.copy(pt);
+      const tieTerrainHeight = getTerrainHeight(pt.x, pt.z);
+      tie.position.y = tieTerrainHeight + 0.1;
+      
+      // Orient tie along the curve
+      const tangent = curve.getTangent(Math.min(1, i / (tiePoints.length - 1)));
+      tie.lookAt(pt.clone().add(tangent));
+      tie.rotateX(Math.PI / 2);
+      
+      tie.castShadow = true;
+      tie.receiveShadow = true;
+      group.add(tie);
+    }
+
+    // Add overhead catenary poles for main lines
+    const railwayType = feature.tags?.railway;
+    if (railwayType === 'rail' || railwayType === 'tram' || railwayType === 'light_rail') {
+      const poleGeometry = new THREE.CylinderGeometry(0.1, 0.15, 6, 6);
+      const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7 });
+      const polePoints = curve.getPoints(Math.max(3, Math.floor(points.length)));
+      
+      for (let i = 0; i < polePoints.length; i += 3) {
+        const pt = polePoints[i];
+        const terrainHeight = getTerrainHeight(pt.x, pt.z);
+        
+        // Pole
+        const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+        pole.position.set(pt.x, terrainHeight + 3, pt.z);
+        pole.castShadow = true;
+        pole.receiveShadow = true;
+        group.add(pole);
+        
+        // Cross arm
+        const crossArm = new THREE.Mesh(
+          new THREE.BoxGeometry(4, 0.15, 0.15),
+          poleMaterial
+        );
+        crossArm.position.set(pt.x, terrainHeight + 6, pt.z);
+        crossArm.castShadow = true;
+        group.add(crossArm);
+      }
+    }
+  }
+
+  return group;
+}
+
 function buildOSMForests(mapData: MapData): THREE.Group {
   const group = new THREE.Group();
   if (!mapData.osmFeatures || mapData.osmFeatures.length === 0) return group;
@@ -1125,6 +1247,7 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
     const landmarks = buildLandmarks(mapData);
     const osmBuildings = buildOSMBuildings(mapData);
     const osmRoads = buildOSMRoads(mapData);
+    const osmRailways = buildOSMRailways(mapData);
     const osmForests = buildOSMForests(mapData);
     const osmAgriculture = buildOSMAgriculture(mapData);
     const placeLabels = buildPlaceLabels(mapData);
@@ -1134,7 +1257,7 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
 
     setWaterMesh(water);
 
-    return { ambient, hemi, dir, terrain, bldgs, vegetation, water, landmarks, osmBuildings, osmRoads, osmForests, osmAgriculture, placeLabels, grid };
+    return { ambient, hemi, dir, terrain, bldgs, vegetation, water, landmarks, osmBuildings, osmRoads, osmRailways, osmForests, osmAgriculture, placeLabels, grid };
   }, [mapData, showGrid, setWaterMesh]);
 
   const dynObjs = useMemo(() => {
@@ -1210,6 +1333,7 @@ function SceneSetup({ mapData, showGrid = true }: GameCanvasProps) {
     addManaged(sceneObjects.landmarks);
     addManaged(sceneObjects.osmBuildings);
     addManaged(sceneObjects.osmRoads);
+    addManaged(sceneObjects.osmRailways);
     addManaged(sceneObjects.osmForests);
     addManaged(sceneObjects.osmAgriculture);
     addManaged(sceneObjects.placeLabels);
